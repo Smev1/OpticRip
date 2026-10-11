@@ -13,7 +13,7 @@ what was learned the hard way, and what risk lies where.
 | 1 | Architecture, dependency evaluation, scaffolding | ✅ done | implicit (all later phases rely on it) |
 | 2 | Media identification + drive discovery | ✅ done | unit tests + real-lab probe of probe results |
 | 3 | Disc inspection: title/track enumeration (DVD) | ✅ ~90% done | synthetic-fixture round-trip, FFmpeg/libdvdread conformance |
-| 4 | Extraction + MKV remux (stream copy) | ⬜ next | not started (design done) |
+| 4 | Extraction + MKV remux (stream copy) | ✅ done | real MKV end-to-end + 38-test suite |
 | 5 | Chapter / language / metadata preservation in output | ⬜ | not started |
 | 6 | Queue, multi-drive, cancellation, recovery, validation | ⬜ | interfaces exist, implementation pending |
 | 7 | PySide6 dark-theme GUI | ⬜ | not started |
@@ -178,29 +178,46 @@ filename : DEMO_DVD_Title 1_01.mkv
 
 ---
 
-## Phase 4 — Extraction & MKV remux ⬜ (next)
+## Phase 4 — Extraction & MKV remux ✅
 
-Designed but not written. The plan, recorded here so progress is visible:
+Implemented and verified end-to-end. The shipped engine:
 
-1. **DVD cell-range extraction** (`rip/extract.py`): stream the exact sectors
-   a title's cells occupy from the .VOB files into a temp MPEG-PS file, with
-   a threads-and-progress-aware copy loop, cancellation checks, read retry
-   budget, and read errors carrying context (which sector, which cell, what
-   retry count).
-2. **Remux via ffmpeg `dvdvideo` + `-c copy`** to Matroska while pulling
-   chapter/language/track metadata through; `mkvmerge` backend if the
-   capability is present and the user picks it in Settings.
-3. **Output validation** (`rip/validate.py`): re-probe with ffprobe, compare
-   codec list, stream count, durations, chapter count against the selection
-   the user asked for. Any mismatch → error, not warning, by default.
-4. **Cancellation**: a `cancelled()` check inside the extraction loop and a
-   `terminate()` on the child muxer process; partial files get removed
-   unless `keep_failed_outputs` is set.
+| Component | File | What it does |
+|---|---|---|
+| Cell-range extractor | `rip/dvdcell.py` | OpticRip's own extraction path: copies exactly the 2048-byte sector ranges a title's PGC cells occupy (from our own IFO parser) out of the `VTS_xx_y.VOB` part files into a local MPEG-PS file. Retries (3 attempts/chunk with backoff), cooperative cancel mid-copy, honest error attribution (path + sector + attempt). Chosen over driving libdvdnav because it has no menu-VM dependency and works on partially-broken discs. |
+| ffmpeg dvdvideo extractor | `rip/extract.py` | Alternative path via ffmpeg's `dvdvideo` demuxer (used for raw devices/images where folder paths do not exist). Failure classification maps raw stderr to specific errors (protection markers → `EncryptedDiscError`, permission denials → `DriveAccessError`, etc.). |
+| FFmpegRemuxer | `rip/ffmpeg.py` | `-c copy` remux to Matroska. Per-track language metadata (`-metadata:s:a:0 language=eng`), chapter markers injected as ffmetadata (MPEG-PS cannot carry chapters, so the parsed chapter start times are re-injected). Input stream count is probed so authored-but-absent streams (empty VOB subtitle tracks) are skipped **with a log line, never silently**. `.part` temp file with atomic `os.replace`. |
+| MkvmergeRemuxer | `rip/ffmpeg.py` | Optional MKVToolNix backend behind the same interface, selectable from Settings (`auto` prefers ffmpeg). |
+| FfprobeValidator | `rip/validate.py` | Re-probes the output: container, streams (kinds + declared languages), chapter count, duration; compares against what was *actually mapped* (so authored-absent tracks do not turn into false failures). Issues are data, not exceptions. |
+| RipEngine | `rip/engine.py` | Orchestrates analyse→extract→remux→validate per job: overwrite policies (`ask` propagates OutputExistsError to the caller; `skip` short-circuits untouched; `overwrite` replaces), free-space pre-check, temp-dir cleanup, cooperative cancellation state machine. |
 
-Risk notes are recorded inline in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § "End-to-end rip pipeline".
+### Verified by tests (38 passing)
 
----
+- `test_pipeline.py::test_rip_produces_valid_mkv` — fixture → MKV, then
+  validated **independently** with ffprobe (container=matroska, video+audio
+  present, language `eng`, 3 chapters, duration ≈ 6 s).
+- `test_no_reencoding` — codec/geometry/rate identity is asserted through the
+  whole chain (mpeg2video 352×288, ac3 48 kHz). **This test caught a real
+  fixture bug**: the synthetic disc declared 48 kHz in its IFO while ffmpeg
+  encoded the sine at 44.1 kHz. The fixture now matches its own declaration —
+  exactly the kind of lie a hand-built fixture can tell when unverified.
+- `test_cancel_produces_no_output` — cancel before work → `Cancelled`, and
+  no output file exists.
+- `test_overwrite_ask_raises` / `test_overwrite_skip_marks_skipped` — policy
+  behaviours, including "must not touch the existing file" for `skip`.
+- `test_job_failure_is_reported_not_raised` — the engine surfaces recoverable
+  errors as data on the job, not exceptions, so a GUI can show them calmly.
+
+### Honest limitations of Phase 4
+
+- Cell-level extraction from a *raw device* (unmounted ISO) is not wired
+  through `DiscFileSystem` yet; a raw drive currently uses the
+  `FfmpegDvdExtractor` path (libdvdnav), which covers it.
+- Chapter fidelity uses our parsed times; validation against libdvdnav's own
+  chapter description (and handling titles whose first VOBU starts above
+  0 s) is Phase 5 work.
+- The CLI rips one job per invocation; batch/multi-title queue behaviour is
+  Phase 6.
 
 ## Phase 5 — Metadata preservation ⬜
 

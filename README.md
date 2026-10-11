@@ -51,10 +51,19 @@
 | **Toolchain probing** | Runtime discovery of ffmpeg/ffprobe/mkvmerge + capability checks (is `dvdvideo` demuxer present? `bluray:` protocol? `matroska` muxer?) surfaced in the diagnostics panel. No silent "assumed present" behaviour. |
 | **Safety plumbing** | Free-space checks before rips start, cooperative cancellation interface, overwrite policies (`ask`/`overwrite`/`skip`/`rename`), read-retry budget. |
 
+### Already implemented and verified ✅ (continued)
+
+| Area | Capability |
+|---|---|
+| **DVD ripping (now working)** | Own cell-range extractor (`rip/dvdcell.py`): copies the exact 2048-byte sector ranges each title's PGC cells occupy out of the VOB part files; retries with backoff; cooperative cancel mid-copy. Alternative path via ffmpeg's `dvdvideo` demuxer for raw devices/images. |
+| **MKV remuxing** | ffmpeg `-c copy` — no re-encoding, asserted by tests (codec/geometry/rate identity through the whole chain). Per-track language metadata and chapter markers injected via ffmetadata. Optional mkvmerge backend. |
+| **Output validation** | ffprobe re-probe comparing what was *actually mapped* (container, streams, languages, chapters, duration) against the selection — issues surface as data. |
+| **Job engine** | Overwrite policies (`ask` propagates to the caller, `skip` never touches, `overwrite` replaces); free-space pre-check; atomic `.part` → `os.replace`; temp-dir cleanup; cooperative cancellation. |
+
 ### In progress 🚧
 
-- **Phase 4 — extraction & remuxing** (DVD cell-range streaming + ffmpeg `-c copy` into MKV) — designed (`ARCHITECTURE.md`), next milestone.
-- **Phase 5 — chapter/language/metadata preservation in the output MKV.**
+- **Phase 5 — chapter/language/metadata preservation edge cases** (first-VOBU
+  skew, forced-subtitle flags, angle handling in output).
 - **Phase 6 — job queue, multi-drive concurrency, error recovery, output validation.**
 - **Phase 7 — PySide6 dark-theme desktop GUI.**
 - **Phase 8 — Blu-ray MPLS/CLPI parsing + protected-disc documentation.**
@@ -122,16 +131,20 @@ an external decryptor, an alternative muxer — without rewriting the app.
 
 ## Current status
 
-**Alpha. Phases 1–3 of 8 complete.** See [`docs/PROGRESS.md`](docs/PROGRESS.md)
+**Alpha. Phases 1–4 of 8 complete.** See [`docs/PROGRESS.md`](docs/PROGRESS.md)
 for the detailed, no-spin progress report.
 
 Concretely what works today:
 
-- `python tools/demo.py` end-to-end: build a synthetic DVD fixture → probe →
-  analyse → list titles/streams/chapters → template an output name.
-- Parser conformance cross-checked against ffmpeg's embedded
-  libdvdread/libdvdnav (`dvdvideo` demuxer): synthetic IFO fixtures are fed to
-  both our parser and libdvdread's; disagreements are bugs by definition.
+- `opticrip-cli inspect <src>` — analyse a device/image/folder and list
+  titles with durations, chapters, streams and languages.
+- `opticrip-cli rip <src>` — **real rips**: select titles and stream tracks,
+  produce a valid MKV with original streams and preserved chapters, then
+  validate the output with ffprobe. Verified end-to-end with a 38-test
+  suite (`pytest`), including cross-engine conformance against ffmpeg's
+  libdvdread on the same fixtures.
+- Fixture building: `tests/synth.py` generates spec-accurate, legal,
+  synthetic unencrypted DVD-Video trees for the whole pipeline to run on.
 
 Concretely what does *not* work yet: no rip-to-MKV pipeline yet (Phase 4), no
 GUI yet (Phase 7), no Blu-ray title list yet (Phase 8).
@@ -205,7 +218,7 @@ IFO structures, matching `ffprobe --f dvdvideo` output.
 ```
 opticrip                      # launch the PySide6 GUI (Phase 7)
 opticrip-cli inspect <src>    # analyse a drive/image/folder and list titles
-opticrip-cli rip <src> ...    # (Phase 4+)
+opticrip-cli rip <src> ...    # rip titles to MKV (working)
 ```
 
 CLI *inspect* currently accepts:
@@ -282,7 +295,7 @@ pytest -m requires_hardware             # manual run with a real drive
 
 ## Known limitations
 
-- No rip-to-MKV output yet (Phase 4 is next on the list).
+- Batch queue execution lands in Phase 6 (engine is job-for-job today).
 - No Blu-ray title enumeration yet (Phase 8). DVD works today; Blu-ray
   playlist parsing is designed but not written.
 - ISO images > 4 GiB are read but multi-extent (>4 GiB single-file) ISO9660
@@ -301,10 +314,9 @@ pytest -m requires_hardware             # manual run with a real drive
 See the phase plan and per-phase status in
 [`docs/PROGRESS.md`](docs/PROGRESS.md).
 
-- **Phase 4** — stream extraction + real MKV remux (`ffmpeg -c copy` streaming
-  out of the cell pipeline). Biggest milestone. Next.
-- **Phase 5** — chapters, languages, subtitle flags, angle handling in the
-  output file.
+- **Phase 5** — chapter/language fidelity edge cases (first-VOBU skew,
+  forced-subtitle flags, angle-in-output handling).
+- **Phase 6** — batch/multi-title queue execution.
 - **Phase 6** — multi-drive job queue with per-drive concurrency, better
   retries and diagnostics.
 - **Phase 7** — the polished dark-theme PySide6 GUI.

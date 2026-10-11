@@ -104,14 +104,16 @@ def build_vob(path: str, spec: DvdFixtureSpec, *, audio_codec: str = "ac3") -> i
         f"rate={spec.video_fps}:duration={duration:.3f}",
     ]
     if spec.audio_streams:
-        args += ["-f", "lavfi", "-i", f"sine=frequency=440:duration={duration:.3f}"]
+        # the IFO declares 48 kHz for every stream we emit; encode to match
+        args += ["-f", "lavfi", "-i",
+                 f"sine=frequency=440:sample_rate=48000:duration={duration:.3f}"]
     args += [
         "-c:v", "mpeg2video", "-b:v", "1200k",
         "-f", "vob",
     ]
     if spec.audio_streams:
         args += ["-c:a", "ac3" if audio_codec == "ac3" else "mp2",
-                 "-b:a", "192k", "-ac", "2"]
+                 "-b:a", "192k", "-ac", "2", "-ar", "48000"]
     args.append(path)
     proc = subprocess.run(args, capture_output=True, text=True, check=False)
     if proc.returncode != 0:
@@ -222,10 +224,14 @@ def _title_set_ifo(spec: DvdFixtureSpec, cell_sectors: list[tuple[int, int]],
     _insert(ifo, SECTOR * 3, bytes(c_adt))
 
     # --- VTS_VOBU_ADMAP at sector 5 (mandatory) ------------------------- #
-    vobu = bytearray(SECTOR)
-    count = (cell_sectors[-1][1] - cell_sectors[0][0] + 1)
-    _insert(vobu, 0, _be32(4 + 4 * count - 1))       # last_byte
-    for i in range(count):
+    # one VOBU start sector per coverable sector; the table can exceed a
+    # single IFO sector, so it is sized accordingly and any slack sectors
+    # in the IFO are true zeros (libdvdread demands exactly this).
+    vobu_count = (cell_sectors[-1][1] - cell_sectors[0][0] + 1)
+    vobu_sectors = -(-(4 + 4 * vobu_count) // SECTOR)
+    vobu = bytearray(SECTOR * vobu_sectors)
+    _insert(vobu, 0, _be32(4 + 4 * vobu_count - 1))  # last_byte
+    for i in range(vobu_count):
         _insert(vobu, 4 + i * 4, _be32(cell_sectors[0][0] + i))
     _insert(ifo, SECTOR * 5, bytes(vobu))
 

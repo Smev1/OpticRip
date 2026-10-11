@@ -216,7 +216,7 @@ class ExtractionResult:
     """What :meth:`StreamExtractor.extract` produced."""
 
     __slots__ = ("paths", "streams", "chapter_times", "cleanup", "protocol",
-                 "size_bytes")
+                 "size_bytes", "duration_hint", "mapped_streams")
 
     def __init__(
         self,
@@ -226,6 +226,7 @@ class ExtractionResult:
         cleanup: bool = True,
         protocol: str = "file",
         size_bytes: int | None = None,
+        duration_hint: float | None = None,
     ) -> None:
         #: input argument(s) handed to the muxer, in order
         self.paths = paths
@@ -238,6 +239,10 @@ class ExtractionResult:
         #: ffmpeg input protocol hint (``file``, ``concat``, ``bluray``...)
         self.protocol = protocol
         self.size_bytes = size_bytes
+        #: total expected duration in seconds (for chapter END fallback)
+        self.duration_hint = duration_hint
+        #: streams that actually made it into the output (set by the remuxer)
+        self.mapped_streams: list[StreamInfo] | None = None
 
 
 class Remuxer(ABC):

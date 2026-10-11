@@ -523,113 +523,6 @@ def mark_main_feature(titles: Sequence[Title], *,
 
 
 # --------------------------------------------------------------------------- #
-# Jobs / progress / results
-# --------------------------------------------------------------------------- #
-
-
-def new_id() -> str:
-    return uuid.uuid4().hex[:12]
-
-
-@dataclass
-class RipJob:
-    """One queued rip of one title from one drive."""
-
-    id: str
-    drive_device: str
-    title: Title
-    selection: TitleSelection
-    output_path: str            # full destination file path (str for JSON-ability)
-    disc_label: str = ""
-    media_type: MediaType = MediaType.UNKNOWN
-    status: JobStatus = JobStatus.QUEUED
-    phase: RipPhase = RipPhase.QUEUED
-    error: str | None = None
-    error_title: str | None = None
-    error_hint: str | None = None
-    created_at: float = field(default_factory=time.time)
-    started_at: float | None = None
-    finished_at: float | None = None
-    attempts: int = 0
-    result: "RipResult | None" = None
-
-    @property
-    def display_name(self) -> str:
-        return self.title.display_name
-
-    @property
-    def elapsed(self) -> float:
-        if self.started_at is None:
-            return 0.0
-        end = self.finished_at if self.finished_at is not None else time.time()
-        return max(0.0, end - self.started_at)
-
-
-@dataclass
-class ProgressUpdate:
-    job_id: str
-    phase: RipPhase
-    #: 0.0 .. 1.0, or ``None`` when indeterminate
-    fraction: float | None = None
-    message: str = ""
-    elapsed: float = 0.0
-    eta: float | None = None
-    speed: float | None = None           # bytes/s or x-realtime
-    processed_bytes: int | None = None
-    total_bytes: int | None = None
-
-    @property
-    def percent(self) -> int | None:
-        if self.fraction is None:
-            return None
-        return max(0, min(100, int(round(self.fraction * 100))))
-
-
-@dataclass
-class ValidationReport:
-    ok: bool = False
-    container: str = ""
-    duration_seconds: float = 0.0
-    size_bytes: int = 0
-    stream_summaries: list[str] = field(default_factory=list)
-    issues: list[str] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
-
-    def add_issue(self, text: str) -> None:
-        self.issues.append(text)
-        self.ok = False
-
-
-@dataclass
-class RipResult:
-    job_id: str
-    ok: bool
-    output_path: str
-    duration_seconds: float = 0.0
-    size_bytes: int = 0
-    validation: ValidationReport | None = None
-    warnings: list[str] = field(default_factory=list)
-
-
-def asdict_safe(obj: Any) -> Any:
-    """``dataclasses.asdict`` that survives enums, paths and nested models."""
-    def _convert(value: Any) -> Any:
-        if dataclasses.is_dataclass(value) and not isinstance(value, type):
-            return {k: _convert(v) for k, v in dataclasses.asdict(value).items()}
-        if isinstance(value, enum.Enum):
-            return value.value
-        if isinstance(value, Mapping):
-            return {str(k): _convert(v) for k, v in value.items()}
-        if isinstance(value, (list, tuple)):
-            return [_convert(v) for v in value]
-        if hasattr(value, "__fspath__"):
-            return str(value)
-        return value
-
-    return _convert(obj)
-
-
-# --------------------------------------------------------------------------- #
 # Drives
 # --------------------------------------------------------------------------- #
 
@@ -716,3 +609,124 @@ class Drive:
     @property
     def is_ready(self) -> bool:
         return self.state is DriveState.READY and self.media_type is not MediaType.EMPTY
+# --------------------------------------------------------------------------- #
+# Jobs / progress / results
+# --------------------------------------------------------------------------- #
+
+
+def new_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+@dataclass
+class RipJob:
+    """One queued rip of one title from one drive."""
+
+    id: str
+    drive_device: str
+    title: Title
+    selection: TitleSelection
+    output_path: str            # full destination file path (str for JSON-ability)
+    disc_label: str = ""
+    media_type: MediaType = MediaType.UNKNOWN
+    drive_kind: DriveKind = DriveKind.RAW
+    status: JobStatus = JobStatus.QUEUED
+    phase: RipPhase = RipPhase.QUEUED
+    error: str | None = None
+    error_title: str | None = None
+    error_hint: str | None = None
+    created_at: float = field(default_factory=time.time)
+    started_at: float | None = None
+    finished_at: float | None = None
+    attempts: int = 0
+    result: "RipResult | None" = None
+
+    @property
+    def display_name(self) -> str:
+        return self.title.display_name
+
+    @property
+    def elapsed(self) -> float:
+        if self.started_at is None:
+            return 0.0
+        end = self.finished_at if self.finished_at is not None else time.time()
+        return max(0.0, end - self.started_at)
+
+    # -- accessors the engine needs (jobs keep plain strings for JSON) ----- #
+    def drive_path(self) -> str:
+        return self.drive_device
+
+    def drive_as_drive(self) -> "Drive":
+        """Reconstruct a minimal :class:`Drive` view for the extractors."""
+        return Drive(
+            path=self.drive_device,
+            kind=self.drive_kind,
+            media_type=self.media_type,
+            state=DriveState.READY,
+        )
+
+
+@dataclass
+class ProgressUpdate:
+    job_id: str
+    phase: RipPhase
+    #: 0.0 .. 1.0, or ``None`` when indeterminate
+    fraction: float | None = None
+    message: str = ""
+    elapsed: float = 0.0
+    eta: float | None = None
+    speed: float | None = None           # bytes/s or x-realtime
+    processed_bytes: int | None = None
+    total_bytes: int | None = None
+
+    @property
+    def percent(self) -> int | None:
+        if self.fraction is None:
+            return None
+        return max(0, min(100, int(round(self.fraction * 100))))
+
+
+@dataclass
+class ValidationReport:
+    ok: bool = False
+    container: str = ""
+    duration_seconds: float = 0.0
+    size_bytes: int = 0
+    stream_summaries: list[str] = field(default_factory=list)
+    issues: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+    def add_issue(self, text: str) -> None:
+        self.issues.append(text)
+        self.ok = False
+
+
+@dataclass
+class RipResult:
+    job_id: str
+    ok: bool
+    output_path: str
+    duration_seconds: float = 0.0
+    size_bytes: int = 0
+    validation: ValidationReport | None = None
+    warnings: list[str] = field(default_factory=list)
+
+
+def asdict_safe(obj: Any) -> Any:
+    """``dataclasses.asdict`` that survives enums, paths and nested models."""
+    def _convert(value: Any) -> Any:
+        if dataclasses.is_dataclass(value) and not isinstance(value, type):
+            return {k: _convert(v) for k, v in dataclasses.asdict(value).items()}
+        if isinstance(value, enum.Enum):
+            return value.value
+        if isinstance(value, Mapping):
+            return {str(k): _convert(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_convert(v) for v in value]
+        if hasattr(value, "__fspath__"):
+            return str(value)
+        return value
+
+    return _convert(obj)
+
+
