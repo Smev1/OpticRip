@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import struct
+import sys
 from dataclasses import dataclass
 from typing import Iterator
 
@@ -58,12 +59,19 @@ class FileBlockDevice(BlockDevice):
 
     def _capacity(self) -> int:
         try:
-            from fcntl import ioctl
+            from fcntl import ioctl          # Linux block device
             buf = bytearray(8)
             ioctl(self._fd, 0x80081272, buf, True)  # BLKGETSIZE64
             return struct.unpack("<Q", buf)[0]
         except (OSError, ImportError):
-            return 0
+            pass
+        if sys.platform.startswith("win"):   # pragma: no cover - Windows
+            try:
+                from ..disc.windows_probe import _volume_capacity_win
+                return _volume_capacity_win(self.path)
+            except Exception:
+                return 0
+        return os.fstat(self._fd).st_size
 
     @property
     def size_bytes(self) -> int:
@@ -74,7 +82,17 @@ class FileBlockDevice(BlockDevice):
             return b""
         offset = max(0, offset)
         try:
-            return os.pread(self._fd, length, offset)
+            if hasattr(os, "pread"):
+                return os.pread(self._fd, length, offset)
+            # Windows (and any other non-pread platform): seek+read. The
+            # fd is per-instance so cross-talk is the caller's concern --
+            # matches the single-threaded probe design.
+            cur = os.lseek(self._fd, 0, os.SEEK_CUR)
+            try:
+                os.lseek(self._fd, offset, os.SEEK_SET)
+                return os.read(self._fd, length)
+            finally:
+                os.lseek(self._fd, cur, os.SEEK_SET)
         except OSError as exc:
             raise DiscStructureError(
                 f"read error at offset {offset} of {self.path}: {exc.strerror}",

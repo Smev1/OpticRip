@@ -1,0 +1,3 @@
+# GUI dependency. The engine itself has zero third-party runtime
+# dependencies (ffmpeg/ffprobe/mkvmerge are external subprocesses).
+PySide6-Essentials>=6.6

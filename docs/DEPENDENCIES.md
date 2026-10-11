@@ -67,3 +67,21 @@ sudo apt install libdvdread8 libdvdnav4 libbluray2
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e '.[gui]'
 ```
+
+
+## Windows client (Phase 9)
+
+* Python 3.11+ and PySide6-Essentials (GUI only). The engine itself remains
+  dependency-free.
+* ffmpeg + ffprobe ships *inside* the Windows bundle under `_bin\` and is
+  found via `rip.tools._frozen_bins_dir()`; alternatively install ffmpeg
+  normally and add its directory to PATH.
+* Optical drives are discovered with `GetDriveTypeW == DRIVE_CDROM`;
+  media presence/labels via `GetVolumeInformationW` with
+  `SEM_FAILCRITICALERRORS` set so Windows never shows the "no disc"
+  dialog during a probe. Empty drives report `ERROR_NOT_READY` -> "No disc
+  in the drive", matching the Linux state.
+* Raw images (.iso) probe identically — the sector reader falls back to
+  plain file reads when the path is a file on every platform.
+* Build: `pyinstaller packaging/opticrip-win.spec` (see README's Windows
+  section); CI builds it in `.github/workflows/windows-build.yml`.

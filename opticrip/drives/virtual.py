@@ -11,7 +11,17 @@ from collections.abc import Iterable
 
 from ..core.interfaces import DriveProvider
 from ..core.models import Drive, DriveKind, DriveState, MediaType
-from ..disc.identify import LinuxMediaProbe, MediaProbe, MediaProbeResult
+from ..disc.identify import MediaProbe, MediaProbeResult
+
+
+def _default_probe():
+    """Platform probe: WindowsMediaProbe-like on win32, Linux elsewhere."""
+    import sys
+    if sys.platform.startswith("win"):
+        from .windows import _WindowsMediaProbeAdapter
+        return _WindowsMediaProbeAdapter()
+    from ..disc.identify import LinuxMediaProbe
+    return LinuxMediaProbe()
 
 _IMAGE_SUFFIXES = (".iso", ".img", ".udf", ".bin")
 
@@ -103,7 +113,7 @@ class ImageProvider(DriveProvider):
     def __init__(self, paths: Iterable[str] = (),
                  probe: MediaProbe | None = None) -> None:
         self.paths = [os.path.abspath(os.path.expanduser(p)) for p in paths]
-        self.probe = probe or LinuxMediaProbe()
+        self.probe = probe or _default_probe()
 
     def add(self, path: str) -> None:
         path = os.path.abspath(os.path.expanduser(path))
@@ -158,7 +168,7 @@ class AutoPathProvider(DriveProvider):
 
     def __init__(self, paths: Iterable[str],
                  probe: MediaProbe | None = None) -> None:
-        self.probe = probe or LinuxMediaProbe()
+        self.probe = probe or _default_probe()
         self.folders = FolderProvider()
         self.images = ImageProvider(probe=self.probe)
         self.raw: list[str] = []

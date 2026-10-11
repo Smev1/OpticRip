@@ -160,6 +160,21 @@ Blu-ray images yet, no GUI settings dialog) not architecture.
 
 ```bash
 sudo apt install ffmpeg            # ffprobe ships with it
+```
+
+**Windows client (Phase 9):** download the `OpticRip-windows` artifact from
+the GitHub Actions **windows-build** workflow run — it contains
+`OpticRip.exe` (GUI) and `opticrip-cli.exe` (console), plus bundled
+`_bin\ffmpeg.exe/_bin\ffprobe.exe`. Optical drives show up by drive letter
+(`D:`); no manual PATH setup is needed when the ffmpeg.exe/ffprobe.exe pair
+is bundled. To rebuild it yourself:
+
+```bat
+py -m venv .venv && .venv\Scripts\activate
+pip install -r requirements.txt pyinstaller
+:: optional: drop ffmpeg.exe/ffprobe.exe into packaging\win\_bin
+pyinstaller packaging\opticrip-win.spec --noconfirm
+:: -> dist\OpticRip```
 # optional alternative muxer:
 sudo apt install mkvtoolnix
 

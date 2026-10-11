@@ -54,13 +54,38 @@ def _run(args: list[str], timeout: float = 10.0) -> tuple[int, str, str]:
         return -1, "", str(exc)
 
 
+def _frozen_bins_dir() -> str | None:
+    """Directory of bundled external binaries in a PyInstaller frozen app.
+
+    PyInstaller onefile extracts to ``sys._MEIPASS``; onedir keeps the
+    layout next to the executable. External binaries are bundled under
+    ``_bin/`` by the .spec file.
+    """
+    import sys
+    base = getattr(sys, "frozen", False) and (
+        getattr(sys, "_MEIPASS", None) or os.path.dirname(sys.executable))
+    if not base:
+        return None
+    candidate = os.path.join(base, "_bin")
+    return candidate if os.path.isdir(candidate) else None
+
+
 def find_executable(name: str, *, extra_paths: list[str] | None = None,
                     explicit: str = "") -> str | None:
-    """Locate ``name``, honouring an explicit setting then extra directories."""
+    """Locate ``name``, honouring an explicit setting then extra directories.
+
+    Search order: explicit -> bundled _bin/ (frozen apps) -> extra_paths ->
+    PATH.
+    """
     if explicit:
         expanded = os.path.expanduser(explicit)
         if os.path.isfile(expanded) and os.access(expanded, os.X_OK):
             return expanded
+    frozen_dir = _frozen_bins_dir()
+    if frozen_dir:
+        candidate = os.path.join(frozen_dir, name)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
     for directory in extra_paths or []:
         candidate = os.path.join(os.path.expanduser(directory), name)
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
