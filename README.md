@@ -59,11 +59,11 @@
 | **MKV remuxing** | ffmpeg `-c copy` — no re-encoding, asserted by tests (codec/geometry/rate identity through the whole chain). Per-track language metadata and chapter markers injected via ffmetadata. Optional mkvmerge backend. |
 | **Output validation** | ffprobe re-probe comparing what was *actually mapped* (container, streams, languages, chapters, duration) against the selection — issues surface as data. |
 | **Job engine** | Overwrite policies (`ask` propagates to the caller, `skip` never touches, `overwrite` replaces); free-space pre-check; atomic `.part` → `os.replace`; temp-dir cleanup; cooperative cancellation. |
+| **Chapter fidelity (phase 5)** | First-VOBU/menu skew auto-shifted so chapter 1 = 0 in the output (logged, never silent); angle-aware cell selection for multi-angle PGCs; forced-subtitle disposition propagated to MKV. |
 
 ### In progress 🚧
 
-- **Phase 5 — chapter/language/metadata preservation edge cases** (first-VOBU
-  skew, forced-subtitle flags, angle handling in output).
+- **Phase 6 — batch/multi-title queue execution + multi-drive concurrency.**
 - **Phase 6 — job queue, multi-drive concurrency, error recovery, output validation.**
 - **Phase 7 — PySide6 dark-theme desktop GUI.**
 - **Phase 8 — Blu-ray MPLS/CLPI parsing + protected-disc documentation.**
@@ -131,7 +131,7 @@ an external decryptor, an alternative muxer — without rewriting the app.
 
 ## Current status
 
-**Alpha. Phases 1–4 of 8 complete.** See [`docs/PROGRESS.md`](docs/PROGRESS.md)
+**Alpha. Phases 1–5 of 8 complete.** See [`docs/PROGRESS.md`](docs/PROGRESS.md)
 for the detailed, no-spin progress report.
 
 Concretely what works today:
@@ -314,8 +314,7 @@ pytest -m requires_hardware             # manual run with a real drive
 See the phase plan and per-phase status in
 [`docs/PROGRESS.md`](docs/PROGRESS.md).
 
-- **Phase 5** — chapter/language fidelity edge cases (first-VOBU skew,
-  forced-subtitle flags, angle-in-output handling).
+- **Phase 6** — batch/multi-title queue execution.
 - **Phase 6** — batch/multi-title queue execution.
 - **Phase 6** — multi-drive job queue with per-drive concurrency, better
   retries and diagnostics.

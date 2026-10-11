@@ -82,6 +82,36 @@ class TestFullPipeline:
         assert len(data["chapters"]) == 3
         assert float(data["format"]["duration"]) == pytest.approx(6.0, abs=0.6)
 
+    def test_chapters_zero_based_in_output(self, analysed, tmp_path,
+                                           have_ffmpeg):
+        """Verify phase-5 skew behaviour: when the PGC's first chapter
+        starts above 0, the MKV's chapter 1 must still report 0."""
+        if not have_ffmpeg:
+            pytest.skip("no ffmpeg")
+        drive, analysis = analysed
+        settings = Settings().normalise()
+        settings.output_dir = str(tmp_path)
+        settings.overwrite_policy = "overwrite"
+        engine = RipEngine(settings)
+        # rewrite chapters to be intentionally skewed; the engine must shift
+        title = analysis.titles[0]
+        title.chapters[0].start_seconds = 1.5
+        title.notes.append("test skew")
+        job = RipJob(id=new_id(), drive_device=drive.path, title=title,
+                     selection=TitleSelection.all_streams(title),
+                     output_path=str(tmp_path / "skew.mkv"),
+                     drive_kind=DriveKind.FOLDER,
+                     media_type=MediaType.DVD_VIDEO)
+        result = engine.run(job)
+        assert result.ok, job.error
+        import json, subprocess
+        probe = subprocess.run(["ffprobe", "-show_chapters",
+                                "-print_format", "json", result.output_path],
+                               capture_output=True, text=True, timeout=60)
+        chapters = json.loads(probe.stdout)["chapters"]
+        assert chapters, "MKV must carry chapters"
+        assert float(chapters[0]["start_time"].replace(",", "")) == 0.0
+
     def test_no_reencoding(self, analysed, tmp_path, have_ffmpeg):
         """Stream copy means: same codecs/parameters in the MKV as on disc."""
         if not have_ffmpeg:

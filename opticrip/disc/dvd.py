@@ -410,6 +410,8 @@ def _parse_stream_attributes(buf: Buffer) -> dict[str, object]:
             "codec": _SUBPIC_CODECS.get(coding, "dvd_subtitle"),
             "language": language,
             "type": sub_type,
+            # lang extension 9 == 'forced' display in players (per ffmpeg)
+            "forced": int(buf.u8(base + 4)) == 9,
         })
     attrs["subtitle"] = subpics
     attrs["problems"] = list(buf.problems)
@@ -593,6 +595,7 @@ def _build_title(ref: DvdTitleRef, vts: VtsSet, pgc: DvdPgc) -> Title:
             codec="dvd_subtitle", codec_long="DVD Subtitle",
             language=entry.get("language"),  # type: ignore[arg-type]
             subtitle_format="vobsub",
+            forced=bool(entry.get("forced")),
             source_id=f"20{int(entry['index']):x}",
         ))
         index += 1
@@ -634,7 +637,10 @@ def _build_title(ref: DvdTitleRef, vts: VtsSet, pgc: DvdPgc) -> Title:
             "cells": [
                 {"vob_id": c.vob_id, "cell_id": c.cell_id,
                  "first_sector": c.first_sector, "last_sector": c.last_sector,
-                 "duration": c.duration}
+                 "duration": c.duration,
+                 "block_mode": c.block_mode, "block_type": c.block_type,
+                 "seamless": c.seamless,
+                 }
                 for c in pgc.cells
             ],
         },

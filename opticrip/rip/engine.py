@@ -41,6 +41,26 @@ from .ffmpeg import make_remuxer
 from .tools import Toolchain
 
 
+def normalise_chapter_times(times: list[float] | None, *, title, log) -> list[float] | None:
+    """Shift chapter times so the first chapter starts at 0.
+
+    DVD chapters derive from PGC program maps, and cell 0 can hide menu or
+    angle padding before the first VOBU that plays. Our cell-range extractor
+    copies exactly the chosen cell sectors, so the *content* stream begins
+    at what the PGC calls "cell 0 start". If the chapter list does not start
+    at 0 we shift it, and log the shift - never silently.
+    """
+    if not times:
+        return times
+    first = times[0]
+    if abs(first) < 0.001:
+        return times
+    shifted = [t - first for t in times]
+    log.info(f"chapter base skew on {title.display_name}: first chapter "
+             f"starts at {first:.3f}s on disc; shifted to 0 in the output")
+    return shifted
+
+
 class RipEngine:
     """Runs one :class:`RipJob` end-to-end. No threading, no callbacks beyond
     ``progress``; orchestration belongs to the caller."""
@@ -142,6 +162,8 @@ class RipEngine:
                              and job.title.chapters
                              and [c.start_seconds for c in job.title.chapters]
                              or None)
+            chapter_times = normalise_chapter_times(
+                chapter_times, title=job.title, log=log)
             self.remuxer.remux(extracted, final_path,
                                progress=emit, cancelled=cancelled,
                                chapter_times=chapter_times)

@@ -51,6 +51,71 @@ MAX_READ_ATTEMPTS = 3
 RETRY_DELAY = 0.25
 
 
+ANGLE_BLOCK_TYPE = 0x01  # per libdvdread BLOCK_TYPE_ANGLE_BLOCK
+
+
+def _select_angle_cells(cells: list[dict], title: Title,
+                        angle: int) -> list[dict]:
+    """Reduce a title's cell list to the cells of one angle.
+
+    DVDs store multi-angle titles as repeated "blocks": N cells per angle,
+    ordered angle by angle, so the block containing (mode first..last,
+    type angle) has ``nb_angles`` members and the wanted one is index
+    ``angle-1`` of each block. When a title has no angle blocks or asks for
+    angle 1 of 1, the cell list is returned unchanged.
+    """
+    if angle <= 1 and title.angles <= 1:
+        # also defensively drop any stray angle blocks: use only non-block
+        # cells plus the first cell of each block (angle 1's members).
+        return _first_angle_of_blocks(cells)
+    if title.angles <= 1:
+        return cells
+    if angle > title.angles:
+        raise ExtractionError(
+            f"title has {title.angles} angle(s); angle {angle} does not exist")
+
+    picked: list[dict] = []
+    block: list[dict] = []
+    for cell in cells:
+        block.append(cell)
+        if cell.get("block_mode") in (0x01, 0x02, 0x03) and \
+                cell.get("block_type") == ANGLE_BLOCK_TYPE and \
+                cell.get("block_mode") != 0x03:
+            continue  # block continues
+        # block (or non-block cell) terminated
+        if len(block) >= title.angles:
+            idx = min(angle, len(block)) - 1
+            picked.append(block[idx])
+        else:
+            # malformed short block: keep it rather than lose content
+            picked.extend(block)
+        block = []
+    if block:
+        picked.extend(block)
+    return picked
+
+
+def _first_angle_of_blocks(cells: list[dict]) -> list[dict]:
+    picked: list[dict] = []
+    skip_rest_of_block = False
+    for cell in cells:
+        in_block = cell.get("block_type") == ANGLE_BLOCK_TYPE and \
+            cell.get("block_mode") in (0x01, 0x02, 0x03)
+        if in_block:
+            mode = cell.get("block_mode")
+            if mode == 0x01:          # first cell of a block
+                picked.append(cell)   # keep angle 1
+                skip_rest_of_block = True
+            elif skip_rest_of_block:
+                pass                  # skip angle 2..n cells
+            if mode == 0x03:          # last cell of the block
+                skip_rest_of_block = False
+        else:
+            skip_rest_of_block = False
+            picked.append(cell)
+    return picked
+
+
 def _vob_files(vts_dir: str, vts_number: int) -> list[str]:
     """Absolute paths of the VOB parts for one title set, in order."""
     parts = []
@@ -113,9 +178,12 @@ class DvdCellExtractor(StreamExtractor):
         log = self._log.bind(f"cell-extract:{title.id}")
         ref = title.source_ref
         vts = int(ref["vts"])
-        cells = ref["cells"]
-        if not cells:
+        all_cells = ref["cells"]
+        if not all_cells:
             raise ExtractionError(f"title {title.id} has no cell ranges")
+
+        cells = _select_angle_cells(all_cells, title, angle=int(
+            title.source_ref.get("angle") or 1))
 
         # locate VOB parts
         if drive.kind is DriveKind.FOLDER:

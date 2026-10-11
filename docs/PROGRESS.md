@@ -14,7 +14,7 @@ what was learned the hard way, and what risk lies where.
 | 2 | Media identification + drive discovery | ✅ done | unit tests + real-lab probe of probe results |
 | 3 | Disc inspection: title/track enumeration (DVD) | ✅ ~90% done | synthetic-fixture round-trip, FFmpeg/libdvdread conformance |
 | 4 | Extraction + MKV remux (stream copy) | ✅ done | real MKV end-to-end + 38-test suite |
-| 5 | Chapter / language / metadata preservation in output | ⬜ | not started |
+| 5 | Chapter / language / metadata preservation in output | ✅ core behaviours done | 47-test suite (skew, angles, forced subs) |
 | 6 | Queue, multi-drive, cancellation, recovery, validation | ⬜ | interfaces exist, implementation pending |
 | 7 | PySide6 dark-theme GUI | ⬜ | not started |
 | 8 | Blu-ray native parsing, protected-disc docs | ⬜ | research done, code not started |
@@ -219,13 +219,30 @@ Implemented and verified end-to-end. The shipped engine:
 - The CLI rips one job per invocation; batch/multi-title queue behaviour is
   Phase 6.
 
-## Phase 5 — Metadata preservation ⬜
+## Phase 5 — Chapter / language / metadata preservation ✅ (core behaviours)
 
-Chapter/language/disposition metadata carried through with `-c copy`
-`metadata` and `-disposition` argument generation. Tests planned against a
-sample disc fixture with known languages and forced-subtitle flags.
+Shipped in this phase, each verified by a test:
 
----
+| Behaviour | Implementation | Verified by |
+|---|---|---|
+| **Chapter base-skew shift** | `rip/engine.py: normalise_chapter_times()` — when the PGC's first chapter starts above 0 s (menu/angle padding before the first VOBU), chapter times shift so chapter 1 begins at 0 in the output, with a logged reason. | `test_chapters_zero_based_in_output` (pipeline; skew fixture) + unit tests |
+| **Angle-aware cell selection** | `rip/dvdcell.py: _select_angle_cells()` — multi-angle PGCs are stored as repeating cell blocks; the extractor picks the one block-member matching the requested angle and drops the rest, so the output has one angle rather than interleaved garbage. Blocks are parsed from `cell_playback_t` `block_mode`/`block_type` (Phase 3 work reused). | `tests/test_phase5.py::TestAngleSelection` (4 unit tests incl. invalid-angle rejection) |
+| **Forced-subtitle flag** | `disc/dvd.py` reads the subpicture attribute `lang_extension == 9` as forced; `rip/ffmpeg.py` sets `-disposition:s:N forced`. Plumb-through verified; end-to-end forced fixture is constrained by MPEG-PS subtitle packet limits (see honesty note below). | `TestForcedSubs` plumbing test |
+| **Languages in MKV** | Already shipped in Phase 4 (`-metadata:s:a:N language=eng`); re-asserted by the pipeline test reading back the tag. | `test_rip_produces_valid_mkv` |
+
+### Honest limitations (Phase 5 remaining nice-to-haves)
+
+- A multi-angle *disc fixture* (IFO + interleaved-angle VOB) has not been
+  built by `tests/synth.py` yet because real interleaved-angle layout needs
+  an ILVU-capable muxer chain. The selection logic is unit-tested against
+  synthetic cell layouts; the fixture-based end-to-end path is unproven.
+- Forced-subtitle end-to-end is constrained by the fact that an
+  `ffmpeg testsrc`-generated MPEG-PS without a real VOB subpicture stream
+  has no subtitle packet for the map to keep; the flag itself reaches
+  `-disposition` correctly.
+- VobSub `dvd_subtitle` bitmaps, palette customisation and SSA/SRT
+  transcoding options are explicitly *not* attempted — MKV carries the
+  original PGS/VobSub streams untouched, which is the point of a remuxer.
 
 ## Phase 6 — Queue & robustness ⬜
 

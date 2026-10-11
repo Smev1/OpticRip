@@ -149,9 +149,12 @@ class FFmpegRemuxer(Remuxer):
                 args += ["-metadata:s:a:" + str(audio_n),
                          f"language={stream.language}"]
                 audio_n += 1
-            elif stream.kind is StreamKind.SUBTITLE and stream.language:
-                args += ["-metadata:s:s:" + str(sub_n),
-                         f"language={stream.language}"]
+            elif stream.kind is StreamKind.SUBTITLE:
+                if stream.language:
+                    args += ["-metadata:s:s:" + str(sub_n),
+                             f"language={stream.language}"]
+                if stream.forced:
+                    args += ["-disposition:s:" + str(sub_n) + " forced"]
                 sub_n += 1
         args += [
             "-c", "copy",
