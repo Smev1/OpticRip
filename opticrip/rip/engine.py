@@ -76,10 +76,12 @@ class RipEngine:
         self.log = log or LogBus()
         from .extract import FfmpegDvdExtractor, PassthroughExtractor
         from .dvdcell import DvdCellExtractor
+        from .bdplay import BdPlaylistExtractor
         from .validate import FfprobeValidator
         # order matters: try the most-specific extractor first
         self.extractors = extractors or [
             DvdCellExtractor(self.tc, self.log),      # own engine, no libdvdnav
+            BdPlaylistExtractor(self.tc, self.log),   # own engine for Blu-ray
             FfmpegDvdExtractor(self.tc, self.log),    # fallback for images/devices
             PassthroughExtractor(self.tc, self.log),
         ]

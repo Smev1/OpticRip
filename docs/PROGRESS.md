@@ -1,6 +1,6 @@
 # Progress report — OpticRip
 
-*Last updated*: Phase 6 of 8 complete. This document is the honest, detail-heavy
+*Last updated*: Phases 7–8 complete (1–8 all core-done). This document is the honest, detail-heavy
 companion to the roadmap in the README: what is done, what is deliberately not,
 what was learned the hard way, and what risk lies where.
 
@@ -16,8 +16,8 @@ what was learned the hard way, and what risk lies where.
 | 4 | Extraction + MKV remux (stream copy) | ✅ done | real MKV end-to-end + 38-test suite |
 | 5 | Chapter / language / metadata preservation in output | ✅ core behaviours done | 47-test suite (skew, angles, forced subs) |
 | 6 | Queue, multi-drive, cancellation, recovery, validation | ✅ done | 53-test suite + live CLI batch e2e |
-| 7 | PySide6 dark-theme GUI | ⬜ | not started |
-| 8 | Blu-ray native parsing, protected-disc docs | ⬜ | research done, code not started |
+| 7 | PySide6 dark-theme GUI | ✅ core done | 4 headless Qt tests + live offscreen smoke |
+| 8 | Blu-ray MPLS/CLPI parsing + extractor, protected-disc policy | ✅ core done | 10-test BDMV suite + libbluray conformance + real pipeline rip |
 
 Total source size at this checkpoint: **~5,500 lines** across 22 Python modules
 + 400-line synthetic-fixture builder + 2 reference C headers vendored for
@@ -285,7 +285,26 @@ Shipped in this phase, each verified by a test:
 
 ---
 
-## Phase 7 — GUI ⬜
+## Phase 7 — GUI ✅ (core)
+
+### What landed
+
+- **`opticrip/gui`**: dark-theme QSS ("theme.py"), reusable widgets
+  (`widgets.py`: `TitleTable`, `QueuePanel`, `LogPanel`), the main window
+  (`mainwindow.py`) wired *only* to existing engine pieces — inspect runs
+  the CLI's analyzer stack, ripping goes through `JobQueue` events — and an
+  entry point (`python -m opticrip.gui`, offscreen fallback for CI).
+- **Headless-tested**: 4 Qt tests (stylesheet, queue events render, log
+  tail, live inspect of the fixture). A real rip through the GUI wiring was
+  smoke-verified offscreen (valid MKV, queue events painted).
+- Bug fixed on the way: an unparented `central = QWidget()` let Qt free the
+  C++ object early ("libshiboken: Internal C++ object already deleted");
+  `setCentralWidget` ownership fixed it.
+
+### Honest limitations
+
+- No settings dialog yet (policies are chosen inline via the queue dialog).
+- Queue panel shows phase/percent per event; no per-drive lane view yet.
 
 Design is fixed in the README under *Interface* and in
 [ARCHITECTURE.md's layering diagram](ARCHITECTURE.md); dark theme baseline via
@@ -294,15 +313,33 @@ colouring; all interactive behaviour wired to the engine (no dead controls).
 
 ---
 
-## Phase 8 — Blu-ray & protected discs ⬜
+## Phase 8 — Blu-ray & protected discs ✅ (core)
 
-### Blu-ray parsing
+### Blu-ray parsing — real
 
-Planned: pure-Python `MPLS` (`BDMV/PLAYLIST/*.mpls`) + `CLPI`
-(`BDMV/CLIPINF/*.clpi`) parsers, including PlayList section walk, PlayItem
-`IN_time`/`OUT_time` (45 kHz), STN table per stream (types/PIDs/types/language
-codes), ClipInfo block, and the 45 kHz → seconds conversion. Component plan is
-written; no code yet.
+- **`disc/bd.py`**: pure-Python, big-endian `MPLS` + `CLPI` parsers
+  (5-offset headers, PlayList→PlayItem walk, STN stream tables with
+  language/pid/coding-type mapping to StreamInfo, playlist entry marks →
+  chapters, sequence-info STC spans) + `BluRayAnalyzer` producing the same
+  `DiscAnalysis` the DVD path does. Byte layouts cross-checked against
+  libbluray's `mpls_parse.c`/`clpi_parse.c` field-by-field.
+- **Fixture conformance demanding lessons**: our spec-built BDMV tree is
+  *accepted by ffmpeg's own libbluray demuxer* ("1 usable playlists") after
+  three byte-level corrections found only because two parsers disagreed:
+  reserved11/multi/conn span **two** bytes (conn nibble in the second);
+  STN has **7** count bytes not 6; playlist marks are fixed 14-byte records
+  (no per-mark length). `tests.bdsynth.write_bdmv_fixture` writes real H.264
+  + AC-3 MPEG-TS and its index.bdmv passes `index_parse.c`.
+- **`rip/bdplay.py`**: `BdPlaylistExtractor` cuts each PlayItem's IN/OUT
+  span (`-ss/-t`, `-c copy`, multi-clip concatenation in play order) and —
+  like the DVD path — classifies scrambled reads as `EncryptedDiscError`.
+  **First real Blu-ray rip via CLI: 181+ s 1920x1080 H.264 + AC-3 MKV with
+  chapters preserved**, validated with ffprobe ("no re-encoding" tests
+  apply here too).
+- **Wiring**: engine picks the BD extractor by `media_type`; CLI registry
+  auto-detects BDMV before DVD.
+- **Docs**: `docs/PROTECTED_DISCS.md` states the no-circumvention policy,
+  where honest errors surface, and why no decoder will ship from here.
 
 ### Protected-disc plan
 

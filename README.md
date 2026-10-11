@@ -61,11 +61,14 @@
 | **Job engine** | Overwrite policies (`ask` propagates to the caller, `skip` never touches, `overwrite` replaces, `error` refuses loud); free-space pre-check; atomic `.part` → `os.replace`; temp-dir cleanup; cooperative cancellation. |
 | **Batch queue (phase 6)** | `JobQueue`: serial per drive, parallel across drives (`allow_parallel_drives`, `max_parallel_jobs` 1–8); cooperative two-level cancel (queued→SKIPPED, running→CANCELLED); per-job failure isolation; retry budget spent only on transient disc-read errors; event stream for CLI/GUI. |
 | **Chapter fidelity (phase 5)** | First-VOBU/menu skew auto-shifted so chapter 1 = 0 in the output (logged, never silent); angle-aware cell selection for multi-angle PGCs; forced-subtitle disposition propagated to MKV. |
+| **Blu-ray (phase 8)** | Pure-Python MPLS/CLPI parsers (char-accurate vs libbluray); playlist extract with `-ss/-t` stream copy per PlayItem; chapters from entry marks; encrypted clips fail honestly. See protected-disc policy (no circumvention — ever). |
+| **Desktop GUI (phase 7)** | PySide6 dark theme: source picker, title table, live queue panel fed by `JobQueue` events, log tail; headless-tested (offscreen Qt). |
 
 ### In progress 🚧
 
-- **Phase 7 — PySide6 dark-theme desktop GUI.**
-- **Phase 8 — Blu-ray MPLS/CLPI parsing + protected-disc documentation.**
+- GUI polish: settings dialog, per-drive queue lanes, drag-and-drop sources.
+- Blu-ray: UDF/ISO image support end-to-end (folder trees work today);
+  multi-angle PlayItems; secondary-audio mapping.
 
 ### Explicitly out of scope ⛔
 
@@ -145,8 +148,9 @@ Concretely what works today:
 - Fixture building: `tests/synth.py` generates spec-accurate, legal,
   synthetic unencrypted DVD-Video trees for the whole pipeline to run on.
 
-Concretely what does *not* work yet: no rip-to-MKV pipeline yet (Phase 4), no
-GUI yet (Phase 7), no Blu-ray title list yet (Phase 8).
+Every phase of the original plan now has a working core: inspect, rip,
+queue, GUI and Blu-ray folder sources. Remaining work is breadth (no UDF ISO
+Blu-ray images yet, no GUI settings dialog) not architecture.
 
 ---
 
@@ -229,7 +233,7 @@ CLI *inspect* currently accepts:
 All three go through the same pipeline; discerning who handles what is
 handled by `disc.identify`.
 
-### GUI (when Phase 7 lands)
+### GUI
 
 Dark theme, drive panel with live media type, title/track tables, per-track
 language & codec columns, queue with elapsed/ETA, destination picker,
@@ -295,8 +299,8 @@ pytest -m requires_hardware             # manual run with a real drive
 ## Known limitations
 
 - Queue state is per-process (no restart resume yet — planned with the GUI).
-- No Blu-ray title enumeration yet (Phase 8). DVD works today; Blu-ray
-  playlist parsing is designed but not written.
+- Blu-ray folder trees (BDMV) work today; .iso/UDF images and raw
+  libbluray devices load titles but have no byte-range extractor yet.
 - ISO images > 4 GiB are read but multi-extent (>4 GiB single-file) ISO9660
   notions are not, which is practically fine: `VIDEO_TS`/`BDMV` comprise
   many small files, none large.
@@ -313,9 +317,8 @@ pytest -m requires_hardware             # manual run with a real drive
 See the phase plan and per-phase status in
 [`docs/PROGRESS.md`](docs/PROGRESS.md).
 
-- **Phase 7** — desktop GUI consuming the queue's event stream.
-- **Phase 7** — the polished dark-theme PySide6 GUI.
-- **Phase 8** — Blu-ray MPLS/CLPI native parsing and the protected-disc docs.
+- **Polish** — GUI settings dialog and per-drive queue lanes.
+- **Breadth** — UDF/ISO Blu-ray images, multi-angle PlayItems.
 
 ---
 
@@ -390,9 +393,9 @@ sources — zero copyrighted inputs, zero legal risk, and cheap to regenerate.
 opticrip/
   core/          domain models, interfaces, config, naming, diskutil, log bus
   drives/        Linux + virtual drive providers
-  disc/          media identification, ISO9660, DVD IFO parser, (BD MPLS in phase 8)
+  disc/          media identification, ISO9660, DVD IFO + Blu-ray MPLS/CLPI parsers
   rip/           toolchain probing, extraction, remuxing, validation, queue
-  gui/           PySide6 frontend (phase 7)
+  gui/           PySide6 frontend (dark theme, queue panel)
   cli/           argparse frontend
 tests/
   synth.py       synthetic, spec-accurate disc fixture builder

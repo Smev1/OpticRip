@@ -29,18 +29,25 @@ from ..core.models import (
 )
 from ..disc.fs import open_disc_filesystem
 from ..disc.dvd import DvdIfoAnalyzer
+from ..disc.bd import BluRayAnalyzer
 from ..drives.virtual import AutoPathProvider
 from ..rip.tools import Toolchain
 
 
 def _pick_analyzer(fs, drive: Drive, log: LogBus):
-    analyzer = DvdIfoAnalyzer(log=log)
-    if analyzer.can_handle(drive, fs):
-        return analyzer
+    for analyzer, labelled in ((BluRayAnalyzer(log=log), "Blu-ray (BDMV)"),
+                               (DvdIfoAnalyzer(log=log), "DVD-Video (VIDEO_TS)")):
+        try:
+            ok = analyzer.can_handle(drive, fs)
+        except Exception:
+            ok = False
+        if ok:
+            log.info(f"media: {labelled}", context="cli")
+            return analyzer
     raise E.UnsupportedMediaError(
         "no supported disc structure found at this source",
-        hint="OpticRip currently reads DVD-Video (VIDEO_TS). Blu-ray arrives "
-             "in Phase 8.")
+        hint="OpticRip reads unencrypted BDMV folder trees and VIDEO_TS "
+             "folders; ISO/UDF images arrive later.")
 
 
 def cmd_inspect(args, log: LogBus) -> int:
