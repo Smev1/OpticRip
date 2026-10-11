@@ -1,0 +1,191 @@
+"""Providers for disc images and already-mounted folders.
+
+These make the whole engine usable - and testable - without hardware, and
+they are the mechanism behind the "open an ISO / open a folder" menu actions.
+"""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Iterable
+
+from ..core.interfaces import DriveProvider
+from ..core.models import Drive, DriveKind, DriveState, MediaType
+from ..disc.identify import LinuxMediaProbe, MediaProbe, MediaProbeResult
+
+_IMAGE_SUFFIXES = (".iso", ".img", ".udf", ".bin")
+
+
+def classify_folder(root: str) -> MediaType:
+    """DVD-Video / Blu-ray / data from the folder's own contents."""
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return MediaType.UNKNOWN
+    upper = {n.upper() for n in names}
+    # accept a disc whose VIDEO_TS/BDMV is nested one level (common for ISOs
+    # extracted with a top-level folder)
+    if "VIDEO_TS" not in upper and "BDMV" not in upper:
+        for entry in names:
+            sub = os.path.join(root, entry)
+            if os.path.isdir(sub):
+                sub_upper = {n.upper() for n in _safe_listdir(sub)}
+                if "VIDEO_TS" in sub_upper or "BDMV" in sub_upper:
+                    root = sub
+                    upper = sub_upper
+                    break
+    if "BDMV" in upper:
+        return MediaType.BLURAY
+    if "VIDEO_TS" in upper:
+        return MediaType.DVD_VIDEO
+    return MediaType.DATA
+
+
+def _safe_listdir(path: str) -> list[str]:
+    try:
+        return os.listdir(path)
+    except OSError:
+        return []
+
+
+def folder_drive(root: str) -> Drive:
+    """Build a ready-to-use :class:`Drive` for a directory."""
+    root = os.path.abspath(os.path.expanduser(root))
+    media = classify_folder(root)
+    exists = os.path.isdir(root)
+    drive = Drive(
+        path=root,
+        kind=DriveKind.FOLDER,
+        id=f"folder:{root}",
+        vendor="Folder",
+        model=os.path.basename(root) or root,
+        bus="virtual",
+        state=DriveState.READY if (exists and media.is_video) else
+              (DriveState.READY if media is MediaType.DATA else DriveState.INACCESSIBLE),
+        media_type=media,
+        volume_label=os.path.basename(root),
+        mount_points=[root],
+    )
+    if not exists:
+        drive.state = DriveState.INACCESSIBLE
+        drive.status_detail = "Folder no longer exists."
+    elif not media.is_video:
+        drive.status_detail = "Folder does not contain VIDEO_TS or BDMV."
+    return drive
+
+
+class FolderProvider(DriveProvider):
+    """Exposes a fixed list of disc folders as drives."""
+
+    name = "folder"
+
+    def __init__(self, roots: Iterable[str] = ()) -> None:
+        self.roots = [os.path.abspath(os.path.expanduser(r)) for r in roots]
+
+    def add(self, root: str) -> None:
+        path = os.path.abspath(os.path.expanduser(root))
+        if path not in self.roots:
+            self.roots.append(path)
+
+    def remove(self, root: str) -> None:
+        if root in self.roots:
+            self.roots.remove(root)
+
+    def list_drives(self) -> list[Drive]:
+        return [folder_drive(r) for r in self.roots]
+
+
+class ImageProvider(DriveProvider):
+    """Exposes disc image files (``.iso``/``.img``) as drives."""
+
+    name = "image"
+
+    def __init__(self, paths: Iterable[str] = (),
+                 probe: MediaProbe | None = None) -> None:
+        self.paths = [os.path.abspath(os.path.expanduser(p)) for p in paths]
+        self.probe = probe or LinuxMediaProbe()
+
+    def add(self, path: str) -> None:
+        path = os.path.abspath(os.path.expanduser(path))
+        if path not in self.paths:
+            self.paths.append(path)
+
+    def remove(self, path: str) -> None:
+        if path in self.paths:
+            self.paths.remove(path)
+
+    def list_drives(self) -> list[Drive]:
+        return [self._build(p) for p in self.paths]
+
+    def _build(self, path: str) -> Drive:
+        drive = Drive(
+            path=path,
+            kind=DriveKind.IMAGE,
+            id=f"image:{path}",
+            vendor="Image",
+            model=os.path.basename(path),
+            bus="virtual",
+            read_only=True,
+        )
+        if not os.path.isfile(path):
+            drive.state = DriveState.INACCESSIBLE
+            drive.status_detail = "Image file not found."
+            return drive
+        drive.size_bytes = os.path.getsize(path)
+        result = self.probe.probe(path)
+        if result.error:
+            drive.status_detail = result.error
+            drive.state = DriveState.INACCESSIBLE
+            return drive
+        drive.volume_label = result.volume_label or os.path.basename(path)
+        drive.media_type = result.media_type
+        # content classification from the ISO9660 tree, done lazily by the
+        # analyzer; report UNKNOWN rather than lying here.
+        drive.state = DriveState.READY
+        drive.extras["filesystem"] = result.filesystem
+        for note in result.protection:
+            drive.extras["protection"] = note
+        return drive
+
+
+class AutoPathProvider(DriveProvider):
+    """Accepts a mix of devices, images and folders on the command line.
+
+    ``opticrip /dev/sr0 movie.iso ~/discs/THING`` just works.
+    """
+
+    name = "auto-path"
+
+    def __init__(self, paths: Iterable[str],
+                 probe: MediaProbe | None = None) -> None:
+        self.probe = probe or LinuxMediaProbe()
+        self.folders = FolderProvider()
+        self.images = ImageProvider(probe=self.probe)
+        self.raw: list[str] = []
+        for raw in paths:
+            path = os.path.expanduser(raw)
+            if os.path.isdir(path):
+                self.folders.add(path)
+            elif path.lower().endswith(_IMAGE_SUFFIXES) or os.path.isfile(path):
+                self.images.add(path)
+            else:
+                self.raw.append(path)
+
+    def list_drives(self) -> list[Drive]:
+        drives = self.folders.list_drives() + self.images.list_drives()
+        for node in self.raw:
+            drive = Drive(path=node, kind=DriveKind.RAW, id=node,
+                          vendor="Optical drive", model=os.path.basename(node))
+            result = self.probe.probe(node)
+            if result.error:
+                drive.state = DriveState.INACCESSIBLE
+                drive.status_detail = result.error
+            elif not result.has_media:
+                drive.state = DriveState.NO_DISC
+            else:
+                drive.state = DriveState.READY
+                drive.media_type = result.media_type
+                drive.volume_label = result.volume_label
+                drive.size_bytes = result.capacity_bytes
+            drives.append(drive)
+        return drives

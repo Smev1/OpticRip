@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opticrip"
+version = "0.1.0"
+description = "Open-source optical disc ripper: browse DVD/Blu-ray titles and remux them losslessly into MKV (a MakeMKV alternative)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "The OpticRip contributors" }]
+keywords = ["dvd", "bluray", "mkv", "makemkv", "remux", "ffmpeg", "libbluray"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: X11 Applications :: Qt",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Video :: Conversion",
+]
+dependencies = [
+  # The core engine has NO third-party Python runtime dependencies.
+  # Everything external (ffmpeg/ffprobe/mkvmerge) is invoked as a subprocess and
+  # is probed at runtime; see docs/DEPENDENCIES.md.
+]
+
+[project.optional-dependencies]
+gui = ["PySide6-Essentials>=6.6"]
+dev = [
+  "pytest>=8.0",
+  "static-ffmpeg>=2.10",   # dev-only: ships ffmpeg/ffprobe for CI sandboxes
+]
+
+[project.scripts]
+opticrip = "opticrip.gui.app:main"
+opticrip-cli = "opticrip.cli.main:main"
+
+[project.urls]
+Homepage = "https://example.invalid/opticrip"
+Documentation = "https://example.invalid/opticrip/docs"
+
+[tool.setuptools.packages.find]
+include = ["opticrip*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+  "requires_ffmpeg: test needs real ffmpeg/ffprobe binaries",
+  "requires_gui: test needs a Qt platform plugin (offscreen is fine)",
+  "requires_hardware: test needs a real optical drive (never runs in CI)",
+]

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Virtualenvs / vendored runtime (disposable, recreate via scripts/)
+.venv/
+vendor/
+node_modules/
+
+# Test / tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local dev output
+output/*
+!output/.gitkeep
+*.log
+
+# IDE
+.idea/
+.vscode/
