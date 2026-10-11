@@ -97,7 +97,8 @@ class RipEngine:
 
     # ---------------------------------------------------------------- #
     def run(self, job: RipJob, *,
-            progress: ProgressCallback = null_progress) -> RipResult:
+            progress: ProgressCallback = null_progress,
+            cancelled: "CancelCheck | None" = None) -> RipResult:
         """Execute one job synchronously. Never raises for a normal,
         recoverable failure - that is reported on the job and the result.
         Programming errors (bug) still raise."""
@@ -107,7 +108,11 @@ class RipEngine:
         job.attempts += 1
         work_dir = tempfile.mkdtemp(prefix=f"opticrip-{job.id}-")
 
+        external_cancel = cancelled or (lambda: False)
+
         def cancelled() -> bool:
+            if external_cancel():
+                return True
             return self.is_cancelled(job.id)
 
         def emit(update: ProgressUpdate) -> None:
@@ -133,6 +138,11 @@ class RipEngine:
                         f"{final_path} already exists",
                         hint="Pick a different name or allow overwriting in "
                              "Settings.")
+                if self.settings.overwrite_policy == "error":
+                    raise E.OutputExistsError(
+                        f"{final_path} already exists",
+                        hint="The batch refuses to clobber an existing file; "
+                             "pick another name.")
             requires_disc = job.drive_kind_is_raw() if hasattr(
                 job, "drive_kind_is_raw") else True
 

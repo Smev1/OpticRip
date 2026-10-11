@@ -127,7 +127,7 @@ def build_parser() -> argparse.ArgumentParser:
                      help="output MKV path (or directory with --template)")
     rip.add_argument("--template",
                      help="output filename template; default from settings")
-    rip.add_argument("--overwrite", choices=("ask", "overwrite", "skip", "rename"),
+    rip.add_argument("--overwrite", choices=("ask", "overwrite", "skip", "rename", "error"),
                      help="behaviour when the output file already exists")
     rip.add_argument("--yes", action="store_true",
                      help="assume yes for prompts (scripting)")
@@ -145,11 +145,11 @@ def cmd_rip(args, log: LogBus) -> int:
         settings.filename_template = args.template
     if args.output and os.path.isdir(args.output):
         settings.output_dir = args.output
-    engine = RipEngine(settings)
 
     provider = AutoPathProvider(args.sources)
     drives = provider.list_drives()
-    wanted = set(args.title or [])
+    wanted_titles = [t for t in (args.title or []) if t > 0]
+    wanted = set(wanted_titles)
     jobs = []
     for drive in drives:
         try:
@@ -160,8 +160,12 @@ def cmd_rip(args, log: LogBus) -> int:
             analysis = _pick_analyzer(fs, drive, log).analyze(drive, fs)
         except E.OpticRipError as exc:
             log.error(f"{exc.title}: {exc.message}"); continue
-        for title in analysis.titles:
-            if wanted and title.index not in wanted:
+        wanted_here = [t for t in wanted_titles if t <= len(analysis.titles)] \
+            or (([t.index for t in analysis.titles]) if not wanted_titles else [])
+        titles_by_index = {t.index: t for t in analysis.titles}
+        for tindex in wanted_here:
+            title = titles_by_index.get(tindex)
+            if title is None:
                 continue
             selection = TitleSelection.all_streams(title)
             if args.audio:
@@ -193,15 +197,38 @@ def cmd_rip(args, log: LogBus) -> int:
         return 2
     log.info(f"ripping {len(jobs)} job(s)")
     exit_code = 0
-    for job in jobs:
-        result = engine.run(job, progress=lambda u: log.info(
-            f"  [{u.phase.label:>10}] {u.message}"
-            + (f" {u.percent}%" if u.percent is not None else "")))
-        if not result.ok:
+    from ..rip.queue import JobQueue, QueueEvent
+
+    def on_event(ev: QueueEvent) -> None:
+        nonlocal exit_code
+        if ev.kind == "progress" and ev.update is not None:
+            u = ev.update
+            log.info(f"  [{u.phase.label:>10}] {u.message}"
+                     + (f" {u.percent}%" if u.percent is not None else ""))
+        elif ev.kind == "result" and ev.result is not None:
+            r = ev.result
+            if r.ok:
+                log.info(f"  -> {r.output_path} "
+                         f"({format_bytes(r.size_bytes)})")
+            else:
+                exit_code = 3
+                detail = "; ".join(r.warnings) if r.warnings else "no detail"
+                log.error(f"  job failed: {detail}")
+
+    queue = JobQueue(settings)
+    queue.subscribe(on_event)
+    queue.start()
+    try:
+        for job in jobs:
+            queue.add(job)
+        if not queue.join(timeout=None) and exit_code == 0:
             exit_code = 3
-        else:
-            log.info(f"  -> {result.output_path} "
-                     f"({format_bytes(result.size_bytes)})")
+    except KeyboardInterrupt:
+        for job in jobs:
+            queue.cancel(job.id)
+        raise
+    finally:
+        queue.stop()
     return exit_code
 
 

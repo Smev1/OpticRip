@@ -39,7 +39,7 @@ def default_output_dir() -> str:
     return os.path.join(os.path.expanduser("~"), "OpticRip")
 
 
-OVERWRITE_POLICIES = ("ask", "overwrite", "skip", "rename")
+OVERWRITE_POLICIES = ("ask", "overwrite", "skip", "rename", "error")
 REMUX_BACKENDS = ("auto", "ffmpeg", "mkvmerge")
 
 

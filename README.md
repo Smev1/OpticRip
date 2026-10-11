@@ -58,13 +58,12 @@
 | **DVD ripping (now working)** | Own cell-range extractor (`rip/dvdcell.py`): copies the exact 2048-byte sector ranges each title's PGC cells occupy out of the VOB part files; retries with backoff; cooperative cancel mid-copy. Alternative path via ffmpeg's `dvdvideo` demuxer for raw devices/images. |
 | **MKV remuxing** | ffmpeg `-c copy` — no re-encoding, asserted by tests (codec/geometry/rate identity through the whole chain). Per-track language metadata and chapter markers injected via ffmetadata. Optional mkvmerge backend. |
 | **Output validation** | ffprobe re-probe comparing what was *actually mapped* (container, streams, languages, chapters, duration) against the selection — issues surface as data. |
-| **Job engine** | Overwrite policies (`ask` propagates to the caller, `skip` never touches, `overwrite` replaces); free-space pre-check; atomic `.part` → `os.replace`; temp-dir cleanup; cooperative cancellation. |
+| **Job engine** | Overwrite policies (`ask` propagates to the caller, `skip` never touches, `overwrite` replaces, `error` refuses loud); free-space pre-check; atomic `.part` → `os.replace`; temp-dir cleanup; cooperative cancellation. |
+| **Batch queue (phase 6)** | `JobQueue`: serial per drive, parallel across drives (`allow_parallel_drives`, `max_parallel_jobs` 1–8); cooperative two-level cancel (queued→SKIPPED, running→CANCELLED); per-job failure isolation; retry budget spent only on transient disc-read errors; event stream for CLI/GUI. |
 | **Chapter fidelity (phase 5)** | First-VOBU/menu skew auto-shifted so chapter 1 = 0 in the output (logged, never silent); angle-aware cell selection for multi-angle PGCs; forced-subtitle disposition propagated to MKV. |
 
 ### In progress 🚧
 
-- **Phase 6 — batch/multi-title queue execution + multi-drive concurrency.**
-- **Phase 6 — job queue, multi-drive concurrency, error recovery, output validation.**
 - **Phase 7 — PySide6 dark-theme desktop GUI.**
 - **Phase 8 — Blu-ray MPLS/CLPI parsing + protected-disc documentation.**
 
@@ -295,7 +294,7 @@ pytest -m requires_hardware             # manual run with a real drive
 
 ## Known limitations
 
-- Batch queue execution lands in Phase 6 (engine is job-for-job today).
+- Queue state is per-process (no restart resume yet — planned with the GUI).
 - No Blu-ray title enumeration yet (Phase 8). DVD works today; Blu-ray
   playlist parsing is designed but not written.
 - ISO images > 4 GiB are read but multi-extent (>4 GiB single-file) ISO9660
@@ -314,10 +313,7 @@ pytest -m requires_hardware             # manual run with a real drive
 See the phase plan and per-phase status in
 [`docs/PROGRESS.md`](docs/PROGRESS.md).
 
-- **Phase 6** — batch/multi-title queue execution.
-- **Phase 6** — batch/multi-title queue execution.
-- **Phase 6** — multi-drive job queue with per-drive concurrency, better
-  retries and diagnostics.
+- **Phase 7** — desktop GUI consuming the queue's event stream.
 - **Phase 7** — the polished dark-theme PySide6 GUI.
 - **Phase 8** — Blu-ray MPLS/CLPI native parsing and the protected-disc docs.
 

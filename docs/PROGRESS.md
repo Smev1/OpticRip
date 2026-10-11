@@ -1,6 +1,6 @@
 # Progress report — OpticRip
 
-*Last updated*: Phase 3 of 8 complete. This document is the honest, detail-heavy
+*Last updated*: Phase 6 of 8 complete. This document is the honest, detail-heavy
 companion to the roadmap in the README: what is done, what is deliberately not,
 what was learned the hard way, and what risk lies where.
 
@@ -15,7 +15,7 @@ what was learned the hard way, and what risk lies where.
 | 3 | Disc inspection: title/track enumeration (DVD) | ✅ ~90% done | synthetic-fixture round-trip, FFmpeg/libdvdread conformance |
 | 4 | Extraction + MKV remux (stream copy) | ✅ done | real MKV end-to-end + 38-test suite |
 | 5 | Chapter / language / metadata preservation in output | ✅ core behaviours done | 47-test suite (skew, angles, forced subs) |
-| 6 | Queue, multi-drive, cancellation, recovery, validation | ⬜ | interfaces exist, implementation pending |
+| 6 | Queue, multi-drive, cancellation, recovery, validation | ✅ done | 53-test suite + live CLI batch e2e |
 | 7 | PySide6 dark-theme GUI | ⬜ | not started |
 | 8 | Blu-ray native parsing, protected-disc docs | ⬜ | research done, code not started |
 
@@ -244,12 +244,44 @@ Shipped in this phase, each verified by a test:
   transcoding options are explicitly *not* attempted — MKV carries the
   original PGS/VobSub streams untouched, which is the point of a remuxer.
 
-## Phase 6 — Queue & robustness ⬜
+## Phase 6 — Queue & robustness ✅
 
-Interfaces (`JobQueue`, `RipJob`, `ProgressUpdate`) exist and are populated by
-Phase 4's engine; serial per-drive executor plus a global concurrency limiter
-(1 job/drive, `max_parallel_jobs` per drive, `allow_parallel_drives`).
-Free-space pre-checks already built (`core/diskutil.py`).
+### What landed
+
+- **`rip/queue.py` — `JobQueue`**, one scheduler, zero Qt deps:
+  - jobs are executed **serially per drive** (an optical drive cannot seek to
+    two places at once; proven by an overlap test on spans) while different
+    drives run in parallel when `allow_parallel_drives` is set — worker pool
+    size is `max_parallel_jobs` clamped to `[1, 8]`;
+  - **cancellation is cooperative and two-level**: a queued job is dequeued
+    and marked `SKIPPED` instantly; a running job finishes its current chunk
+    then stops (`CANCELLED`);
+  - **failure isolation**: one job's exception is caught in `_run_job` and
+    becomes a FAILED result — the batch proceeds; tested with a real
+    overwrite-refusal next to a good job;
+  - **retry budget** (`read_retries`) applies **only to transient
+    `DiscReadError`s** — fatal errors (bad selection, no space, refuse-to-
+    overwrite) never burn retries;
+  - **event fan-out** (`QueueEvent`: added/started/progress/result) so the
+    GUI and the CLI subscribe without polling.
+- **New `error` overwrite policy** (`ask|overwrite|skip|rename|error`): the
+  batch-safe fail-loud default for queued runs; `ask` still propagates
+  out of the queue so the GUI can prompt.
+- **CLI batch execution**: `opticrip-cli rip <src> --title 1 --title 1 ...`
+  fans one job out per repeated `--title`, runs everything through the
+  queue, prints per-job results, and exits 3 if any job failed —
+  **verified live**: 2 duplicate titles → 1 valid 1.1 MiB MKV + 1 refusal
+  by the `error` policy, stale file untouched, exit 3.
+
+### Honest limitations (Phase 6 remaining nice-to-haves)
+
+- Multi-*drive* parallelism is thread-scheduled but only exercised with a
+  single synthetic source directory in tests; two real USB drives racing on
+  one working directory is untested on real hardware.
+- Queue state is in-memory per process (deliberate for now: the GUI is the
+  queue's owner); no persistence/resume across restarts yet — that is a
+  Phase 7 decision.
+
 
 ---
 
