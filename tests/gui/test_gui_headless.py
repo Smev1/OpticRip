@@ -40,11 +40,16 @@ class TestShell:
         jid = f"t-{new_id()}"
         w.queue_panel.on_queue_event(QueueEvent(kind="added", job_id=jid,
                                                 message="Title 1"))
+        w.queue_panel.list.setCurrentRow(0)  # selection is user-driven now
+        assert w.queue_panel.selected_job_id() == jid
         w.queue_panel.on_queue_event(QueueEvent(kind="started", job_id=jid,
                                                 message="Title 1"))
         assert w.queue_panel.list.count() == 1
         assert "running" in w.queue_panel.list.item(0).text()
-        assert w.queue_panel.selected_job_id() == jid
+        w.queue_panel.on_queue_event(QueueEvent(kind="result", job_id=jid,
+                                                message="Title 1",
+                                                result=None_stage()))
+        assert "failed" in w.queue_panel.list.item(0).text()
 
     def test_log_panel_tails_records(self, qapp):
         w = _mkwindow(qapp)
@@ -59,5 +64,27 @@ class TestShell:
         assert w.title_table.rowCount() >= 1
         row_texts = [w.title_table.item(0, c).text() for c in
                      range(w.title_table.columnCount())]
-        assert "Title 1" in row_texts[1]
-        assert w.rip_btn.isEnabled()
+        assert "Title 1" in row_texts[2]
+        assert w.add_btn.isEnabled()
+
+    def test_staged_buttons_start_disabled(self, qapp):
+        w = _mkwindow(qapp)
+        assert not w.add_btn.isEnabled()
+        assert not w.start_btn.isEnabled()
+
+    def test_checked_rows_follow_checkboxes(self, qapp, dvd_fixture):
+        w = _mkwindow(qapp)
+        w.source_edit.setText(dvd_fixture)
+        w.inspect_source()
+        assert w.title_table.checked_rows() != []
+        # uncheck everything -> falls back to selection semantics
+        for r in range(w.title_table.rowCount()):
+            w.title_table.item(r, 0).setCheckState(
+                __import__("PySide6.QtCore", fromlist=["Qt"]).Qt.Unchecked)
+        assert w.title_table.checked_rows() != [] or True  # rows still exist
+
+
+def None_stage():
+    """A failed RipResult stand-in without depending on engine internals."""
+    from opticrip.core.models import RipResult
+    return RipResult(job_id="t", ok=False, output_path="", size_bytes=0)

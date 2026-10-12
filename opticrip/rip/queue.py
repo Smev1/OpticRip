@@ -189,6 +189,16 @@ class JobQueue:
         self._shutdown.clear()
         self.run_forever()
 
+    def is_running(self) -> bool:
+        """True once ``start`` has spawned workers and ``stop`` has not."""
+        return bool(self._workers) and not self._shutdown.is_set()
+
+    def pending_count(self) -> int:
+        """Jobs that are queued or running (non-terminal) right now."""
+        with self._lock:
+            return sum(1 for j in self._jobs.values()
+                       if not j.status.is_terminal)
+
     def stop(self, wait: bool = True, timeout: float = 30.0) -> None:
         """Graceful stop: queued jobs stay queued; running ones finish."""
         self._shutdown.set()

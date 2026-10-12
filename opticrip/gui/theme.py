@@ -20,4 +20,15 @@ QHeaderView::section { background-color: #26272d; border: none; padding: 4px; }
 QProgressBar { background-color: #26272d; border: 1px solid #3a3c44; border-radius: 6px; text-align: center; height: 16px; }
 QProgressBar::chunk { background-color: #2f9e6e; border-radius: 5px; }
 QStatusBar { background-color: #17181c; color: #9aa0ab; }
+
+QPushButton#primary { background-color: #1f7a4d; font-size: 14px; padding: 8px 18px; }
+QPushButton#primary:hover { background-color: #26925d; }
+QPushButton#primary:disabled { background-color: #3a3c44; color: #77797f; }
+QLabel#hint { color: #9aa0ab; font-size: 12px; font-weight: 400; }
+QTableWidget { background-color: #202127; border: 1px solid #34363d; border-radius: 6px; gridline-color: #2b2c33; }
+QTableWidget::item { padding: 3px 6px; }
+QTableWidget::item:selected { background-color: #2b6cb0; color: white; }
+QListWidget::item { padding: 3px 6px; }
+QMessageBox { background-color: #1e1f24; }
+QTabBar::tab:selected { color: #7cc4ff; font-weight: 600; }
 """
