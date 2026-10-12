@@ -156,7 +156,8 @@ def read_sectors(root: str, sector: int, count: int = 1) -> bytes | None:
 def probe_root(root: str):
     """Classify media at ``root`` (drive letter, image or folder)."""
     from .identify import (
-        MediaProbeResult, is_iso9660_pvd, iso9660_volume_label, udf_versions,
+        MediaProbeResult, _classify_iso9660_root, is_iso9660_pvd,
+        iso9660_volume_label, udf_versions,
     )
     result = MediaProbeResult()
 
@@ -195,6 +196,13 @@ def probe_root(root: str):
         result.raw_signatures["udf"] = ",".join(sorted(set(labels)))
     result.media_type = MediaType.UNKNOWN if result.filesystem \
         else MediaType.DATA
+    if is_iso9660_pvd(pvd):
+        # Same content classification as the Linux probe: peek the PVD root
+        # extent for the VIDEO_TS/BDMV sentinels.  read_sectors handles both
+        # drive letters and image files on Windows.
+        result.media_type = _classify_iso9660_root(
+            lambda lba, n: read_sectors(root, lba, n) or b"",
+            pvd, result.media_type)
     if os.path.isfile(root):
         result.capacity_bytes = os.path.getsize(root)
     return result

@@ -137,17 +137,22 @@ def _u32_le(chunk: bytes, offset: int) -> int:
     return int.from_bytes(chunk[offset:offset + 4], "little")
 
 
-def _classify_iso9660_root(fd: int, pvd: bytes, fallback):
+def _classify_iso9660_root(read_sectors, pvd: bytes, fallback):
     """Peek the ISO9660 PVD root-directory extent for VIDEO_TS / BDMV.
 
-    Reads the root directory's extent bytes directly (no full tree walk) and
-    matches directory-record identifiers case-insensitively.  Returns
-    ``fallback`` on any problem - classification here is advisory only.
+    ``read_sectors(lba, count)`` supplies raw 2048-byte sectors - passed in as
+    a callable so both the Linux ``os.pread`` path and the Windows
+    file-reading path share one implementation (module ``os.pread`` does not
+    exist on Windows).  Matches directory-record identifiers
+    case-insensitively.  Returns ``fallback`` on any problem - classification
+    here is advisory only.
     """
     try:
         root_lba = _u32_le(pvd, 156 + 2)
         root_size = _u32_le(pvd, 156 + 10)
-        blob = os.pread(fd, root_size, root_lba * SECTOR)
+        n = max(1, (root_size + SECTOR - 1) // SECTOR)
+        blob = read_sectors(root_lba, n) or b""
+        blob = blob[:root_size]
         upper = blob.upper()
         if b"VIDEO_TS" in upper:
             return MediaType.DVD_VIDEO
@@ -254,8 +259,10 @@ class LinuxMediaProbe(MediaProbe):
             # paths already surface DVD-Video/Blu-ray instead of "unknown
             # data disc"; the analyzers still do the real structural work.
             result.media_type = MediaType.UNKNOWN
+            sector = self.sector_size
             result.media_type = _classify_iso9660_root(
-                fd, pvd, result.media_type)
+                lambda lba, n: os.pread(fd, n * sector, lba * sector),
+                pvd, result.media_type)
             return result
         except OSError as exc:
             result.error = f"read error while probing {device_path}: {exc.strerror}"
