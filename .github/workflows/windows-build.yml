@@ -17,11 +17,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install project + PyInstaller
+      - name: Install project, test deps + PyInstaller
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller
+          pip install "pytest>=8.0" "static-ffmpeg>=2.10" pyinstaller
 
       - name: Run test suite (offscreen Qt)
         env:
