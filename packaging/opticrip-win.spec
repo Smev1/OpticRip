@@ -25,6 +25,7 @@ if os.path.isdir(_BUNDLED_BIN):
             binaries.append((os.path.join(_BUNDLED_BIN, fname), "_bin"))
 
 a = Analysis(
+    # Run the GUI as module `opticrip.gui.app` so relative imports resolve
     [os.path.join(_SOURCES, "opticrip", "gui", "app.py")],
     pathex=[_SOURCES],
     binaries=binaries,
