@@ -85,6 +85,31 @@ def have_ffmpeg() -> bool:
         return bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
 
 
+def _demuxers() -> set[str]:
+    """The set of input demuxers the located ffmpeg supports."""
+    try:
+        import static_ffmpeg  # type: ignore
+        static_ffmpeg.add_paths()
+    except ImportError:
+        pass
+    import shutil
+    import re
+    import subprocess
+    ff = shutil.which("ffmpeg")
+    if not ff:
+        return set()
+    out = subprocess.run([ff, "-hide_banner", "-demuxers"],
+                         capture_output=True, text=True).stdout
+    return {m.group(1) for m in
+            re.finditer(r"^\s*D\s+(\S+)", out, re.MULTILINE)}
+
+
+def ffmpeg_supports_demuxer(name: str) -> bool:
+    """Whether this ffmpeg build contains an optional demuxer (dvdvideo
+    and bluray are external-lib builds often omitted from static binaries)."""
+    return name in _demuxers()
+
+
 @pytest.fixture
 def dvd_fixture(tmp_path: Path):
     """A synthetic, spec-accurate, unencrypted DVD-Video tree."""

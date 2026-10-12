@@ -93,6 +93,9 @@ class TestFfprobeConformance:
         agree with our parser on stream kinds and the audio language."""
         if not have_ffmpeg:
             pytest.skip("no ffmpeg available")
+        from conftest import ffmpeg_supports_demuxer
+        if not ffmpeg_supports_demuxer("dvdvideo"):
+            pytest.skip("ffmpeg build lacks libdvdread dvdvideo demuxer")
         proc = subprocess.run(
             ["ffprobe", "-hide_banner", "-f", "dvdvideo",
              "-show_streams", "-show_format", "-print_format", "json",

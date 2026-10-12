@@ -125,6 +125,9 @@ class TestLibblurayConformance:
     def test_ffmpeg_accepts_tree(self, tmp_path, have_ffmpeg):
         if not have_ffmpeg:
             pytest.skip("no ffmpeg")
+        from conftest import ffmpeg_supports_demuxer
+        if not ffmpeg_supports_demuxer("bluray"):
+            pytest.skip("ffmpeg build lacks libbluray demuxer")
         dest = tmp_path / "long"
         _long_fixture(str(dest))
         proc = subprocess.run(
@@ -144,6 +147,9 @@ class TestPipeline:
     def test_blu_ray_rip_produces_valid_mkv(self, tmp_path, have_ffmpeg):
         if not have_ffmpeg:
             pytest.skip("no ffmpeg")
+        from conftest import ffmpeg_supports_demuxer
+        if not ffmpeg_supports_demuxer("bluray"):
+            pytest.skip("ffmpeg build lacks libbluray demuxer")
         from opticrip.disc.fs import open_disc_filesystem
         from opticrip.rip.engine import RipEngine
         from opticrip.core.config import Settings
