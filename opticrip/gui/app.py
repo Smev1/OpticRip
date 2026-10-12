@@ -25,7 +25,10 @@ def _ensure_package_context() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    if os.environ.get("QT_QPA_PLATFORM") is None and not os.environ.get("DISPLAY"):
+    # Headless fallback ONLY where "no DISPLAY" really means "no display"
+    # (Linux CI / containers). On Windows there is never a DISPLAY variable,
+    # and forcing offscreen there launches an invisible window.
+    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
