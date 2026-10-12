@@ -237,9 +237,17 @@ class TestIsoDirectInput:
 
 class TestDvdcssDiscovery:
     def test_env_builder_prepends_dir(self):
-        lib = "/some/where/libdvdcss.so.2"
-        env = dvdcss_env(lib)
-        assert "/some/where" == env["LD_LIBRARY_PATH"].split(os.pathsep)[0]
+        import sys
+        # Library lookup is loader-specific: LD_LIBRARY_PATH on POSIX,
+        # PATH (+ add_dll_directory) on Windows.
+        if sys.platform == "win32":
+            lib = r"C:\some\where\libdvdcss-2.dll"
+            env = dvdcss_env(lib)
+            assert env["PATH"].split(os.pathsep)[0] == r"C:\some\where"
+        else:
+            lib = "/some/where/libdvdcss.so.2"
+            env = dvdcss_env(lib)
+            assert env["LD_LIBRARY_PATH"].split(os.pathsep)[0] == "/some/where"
 
     def test_find_dvdcss_can_find_in_search_paths(self, tmp_path):
         # Discovery is environment-dependent: only assert it finds a
