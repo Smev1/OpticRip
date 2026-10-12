@@ -288,6 +288,99 @@ class TestShortBlockReads:
             dev.close()
 
 
+class TestWindowsBinaryMode:
+    """os.open() on Windows defaults to CRT *text* mode: os.read then
+    collapses CRLF and stops at the first 0x1A byte, returning runt
+    "sectors". If FileBlockDevice does not ask for O_BINARY, ISO parsing
+    dies with 'malformed ISO9660 directory record'."""
+
+    def test_flag_builder_includes_o_binary_when_defined(self, monkeypatch):
+        import os as _os
+        from opticrip.disc.fs import block_device_open_flags
+        monkeypatch.setattr(_os, "O_BINARY", 0x8000000, raising=False)
+        assert block_device_open_flags() & 0x8000000
+
+    def test_file_block_device_opens_in_binary_mode(self, tmp_path,
+                                                     monkeypatch):
+        import os as _os
+        from opticrip.disc import fs as fsmod
+
+        monkeypatch.setattr(_os, "O_BINARY", 0x8000000, raising=False)
+        captured = {}
+        real_open = _os.open
+
+        def spy(path, flags, *args, **kwargs):
+            captured["flags"] = flags
+            # strip the fake bit before hitting the real kernel
+            return real_open(path, flags & ~0x8000000, *args, **kwargs)
+
+        monkeypatch.setattr(_os, "open", spy)
+        blob = tmp_path / "blob.bin"
+        blob.write_bytes(b"\x00" * 4096)
+        dev = fsmod.FileBlockDevice(str(blob))
+        try:
+            assert len(dev.read(0, 2048)) == 2048
+        finally:
+            dev.close()
+        assert captured["flags"] & 0x8000000, (
+            "FileBlockDevice must request O_BINARY on platforms that have it")
+
+    def test_text_mode_truncation_reproduces_ci_error(self, tmp_path):
+        """Why O_BINARY matters: emulating the Windows CRT text-mode read
+        (stop at the first 0x1A byte) must produce EXACTLY the CI failure -
+        'malformed ISO9660 directory record' - because the PVD sector's byte
+        132 is 0x1A in the fixture. With O_BINARY requested, no translation
+        happens and the same file parses cleanly."""
+        from opticrip.core.errors import DiscStructureError
+        from opticrip.disc.fs import FileBlockDevice, Iso9660Disc
+        pycdlib = pytest.importorskip("pycdlib")
+        vts = tmp_path / "VIDEO_TS"
+        vts.mkdir(exist_ok=True)
+        vts_p1 = vts / "VIDEO_TS.IFO"
+        vts_p1.write_bytes(b"DVDMRVH" + b"\x00" * 6
+                           + (12).to_bytes(4, "little") + b"\x00" * 1988)
+        big = tmp_path / "_pad.bin"
+        big.write_bytes(b"\x00" * (64 * 2048))
+        iso_path = str(tmp_path / "movie.iso")
+        pkg = pycdlib.PyCdlib(); pkg.new(interchange_level=3)
+        pkg.add_directory('/VIDEO_TS')
+        pkg.add_file(str(vts_p1), '/VIDEO_TS/VIDEO_TS.IFO')
+        pkg.add_file(str(big), '/VIDEO_TS/PAD.BIN')
+        pkg.write(iso_path); pkg.close()
+
+        # sanity: the fixture really does carry the trap
+        with open(iso_path, "rb") as fh:
+            fh.seek(16 * 2048)
+            pvd = fh.read(2048)
+        assert b"\x1a" in pvd[:156]
+
+        class TextMode(FileBlockDevice):
+            """CRT text mode semantics: 0x1A is EOF, CRLF collapses."""
+            def read(self, offset, length):
+                data = super().read(offset, length)
+                idx = data.find(b"\x1a")
+                if idx != -1:
+                    return data[:idx]
+                return data.replace(b"\r\n", b"\n")
+
+        dev = TextMode(iso_path)
+        try:
+            with pytest.raises(DiscStructureError,
+                               match="malformed ISO9660"):
+                Iso9660Disc(dev)
+        finally:
+            dev.close()
+
+        # binary mode (what we now request): parses fine
+        dev2 = FileBlockDevice(iso_path)
+        try:
+            fs = Iso9660Disc(dev2)
+            assert fs.find_case_insensitive(
+                "VIDEO_TS/VIDEO_TS.IFO") is not None
+        finally:
+            dev2.close()
+
+
 class TestDvdcssDiscovery:
     def test_env_builder_prepends_dir(self):
         import sys

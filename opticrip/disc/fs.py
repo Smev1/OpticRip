@@ -37,13 +37,27 @@ _MAX_VOLUME_DESCRIPTORS = 64
 # --------------------------------------------------------------------------- #
 
 
+def block_device_open_flags() -> int:
+    """Flags for opening a device/image file.
+
+    ``O_BINARY`` is mandatory on Windows: without it the C runtime opens the
+    file in *text* mode, where ``os.read`` collapses CRLF pairs and treats
+    the first ``0x1A`` byte as EOF - returning short "sectors" while the
+    caller believes it got a full 2048-byte block.  On POSIX the constant
+    does not exist and contributes 0.
+    """
+    return (os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NONBLOCK", 0))
+
+
 class FileBlockDevice(BlockDevice):
     """Random access over a device node or an image file."""
 
     def __init__(self, path: str, sector_size: int = LOGICAL_SECTOR) -> None:
         self.path = path
         self.sector_size = sector_size
-        flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
+        flags = block_device_open_flags()
         try:
             self._fd = os.open(path, flags)
         except OSError as exc:

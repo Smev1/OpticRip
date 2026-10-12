@@ -201,9 +201,11 @@ class LinuxMediaProbe(MediaProbe):
     # -- main ----------------------------------------------------------- #
     def probe(self, device_path: str) -> MediaProbeResult:
         result = MediaProbeResult()
-        flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
         try:
-            fd = os.open(device_path, flags)
+            # Same flags as the block device layer: crucially O_BINARY on
+            # Windows, where the CRT would otherwise read in text mode.
+            from .fs import block_device_open_flags
+            fd = os.open(device_path, block_device_open_flags())
         except OSError as exc:
             result.error = _describe_open_error(exc, device_path)
             result.error_hint = _hint_for_errno(exc.errno, device_path)
