@@ -255,12 +255,14 @@ class TestShortBlockReads:
         pkg.write(iso_path); pkg.close()
 
         # Dribble every OS read to <=100 bytes, like a short-reading platform.
+        # os.pread is POSIX-only; patch whichever reader this platform uses.
         import os as _os
-        real_pread = _os.pread
+        if hasattr(_os, "pread"):
+            real_pread = _os.pread
+            monkeypatch.setattr(
+                _os, "pread",
+                lambda fd, n, off: real_pread(fd, min(n, 100), off))
         real_read = _os.read
-        monkeypatch.setattr(
-            _os, "pread",
-            lambda fd, n, off: real_pread(fd, min(n, 100), off))
         monkeypatch.setattr(
             _os, "read",
             lambda fd, n: real_read(fd, min(n, 100)))
