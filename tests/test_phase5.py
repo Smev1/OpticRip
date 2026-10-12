@@ -138,3 +138,51 @@ class TestForcedSubs:
         # stream-count probe skipped the unused one - verify nothing crashes
         # and the disposition machinery only fires on present streams.
         assert probe.returncode == 0
+
+
+# --------------------------------------------------------------------------- #
+# regression: nested VIDEO_TS/BDMV (wrapper folder) must re-root the drive
+# --------------------------------------------------------------------------- #
+import os
+
+from opticrip.disc.bd import BluRayAnalyzer
+from opticrip.disc.dvd import DvdIfoAnalyzer
+from opticrip.drives.virtual import folder_drive
+
+
+class TestNestedVideoFolders:
+    def _fs_for(self, tmp_path, tree):
+        for rel, content in tree.items():
+            p = os.path.join(tmp_path, rel)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "wb") as fh:
+                fh.write(content)
+        return tmp_path
+
+    def test_nested_video_ts_re_rooted(self, tmp_path):
+        self._fs_for(tmp_path, {
+            "OverTheHedge/VIDEO_TS/VIDEO_TS.IFO":
+                b"DVDMRVH" + b"\x00" * 6 + (32).to_bytes(4, "little") + b"\x00" * 2040,
+        })
+        drive = folder_drive(str(tmp_path))
+        assert drive.media_type.label == "DVD-Video"
+        fs = __import__("opticrip.disc.fs", fromlist=["open_disc_filesystem"]).open_disc_filesystem(drive.path)
+        assert DvdIfoAnalyzer().can_handle(drive, fs)
+
+    def test_nested_bdmv_re_rooted(self, tmp_path):
+        self._fs_for(tmp_path, {
+            "Movie/BDMV/index.bdmv": b"INDX0200" + b"\x00" * 40,
+        })
+        drive = folder_drive(str(tmp_path))
+        assert drive.media_type.label == "Blu-ray"
+        fs = __import__("opticrip.disc.fs", fromlist=["open_disc_filesystem"]).open_disc_filesystem(drive.path)
+        assert BluRayAnalyzer().can_handle(drive, fs)
+
+    def test_flat_video_ts_still_works(self, tmp_path):
+        self._fs_for(tmp_path, {
+            "VIDEO_TS/VIDEO_TS.IFO":
+                b"DVDMRVH" + b"\x00" * 6 + (32).to_bytes(4, "little") + b"\x00" * 2040,
+        })
+        drive = folder_drive(str(tmp_path))
+        assert drive.path == str(tmp_path)
+        assert drive.media_type.label == "DVD-Video"

@@ -26,24 +26,38 @@ def _default_probe():
 _IMAGE_SUFFIXES = (".iso", ".img", ".udf", ".bin")
 
 
+def locate_video_root(path: str) -> str:
+    """The effective disc root for ``path``.
+
+    Accepts a disc whose VIDEO_TS/BDMV is nested one level below the given
+    folder (common for ISOs extracted with a top-level wrapper folder).
+    Returns the directory that directly contains VIDEO_TS or BDMV, or the
+    path unchanged when no nesting applies.
+    """
+    try:
+        names = os.listdir(path)
+    except OSError:
+        return path
+    upper = {n.upper() for n in names}
+    if "VIDEO_TS" in upper or "BDMV" in upper:
+        return path
+    for entry in names:
+        sub = os.path.join(path, entry)
+        if os.path.isdir(sub):
+            sub_upper = {n.upper() for n in _safe_listdir(sub)}
+            if "VIDEO_TS" in sub_upper or "BDMV" in sub_upper:
+                return sub
+    return path
+
+
 def classify_folder(root: str) -> MediaType:
     """DVD-Video / Blu-ray / data from the folder's own contents."""
+    root = locate_video_root(root)
     try:
         names = os.listdir(root)
     except OSError:
         return MediaType.UNKNOWN
     upper = {n.upper() for n in names}
-    # accept a disc whose VIDEO_TS/BDMV is nested one level (common for ISOs
-    # extracted with a top-level folder)
-    if "VIDEO_TS" not in upper and "BDMV" not in upper:
-        for entry in names:
-            sub = os.path.join(root, entry)
-            if os.path.isdir(sub):
-                sub_upper = {n.upper() for n in _safe_listdir(sub)}
-                if "VIDEO_TS" in sub_upper or "BDMV" in sub_upper:
-                    root = sub
-                    upper = sub_upper
-                    break
     if "BDMV" in upper:
         return MediaType.BLURAY
     if "VIDEO_TS" in upper:
@@ -61,6 +75,11 @@ def _safe_listdir(path: str) -> list[str]:
 def folder_drive(root: str) -> Drive:
     """Build a ready-to-use :class:`Drive` for a directory."""
     root = os.path.abspath(os.path.expanduser(root))
+    # Re-root at the level that actually holds VIDEO_TS/BDMV so the analyzer
+    # (which opens drive.path) sees the sentinel files. classify_folder peeks
+    # into the tree either way, but without this the analyzer would search at
+    # the wrapper folder and report an unsupported structure.
+    root = locate_video_root(root)
     media = classify_folder(root)
     exists = os.path.isdir(root)
     drive = Drive(
