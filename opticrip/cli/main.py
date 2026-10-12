@@ -46,8 +46,10 @@ def _pick_analyzer(fs, drive: Drive, log: LogBus):
             return analyzer
     raise E.UnsupportedMediaError(
         "no supported disc structure found at this source",
-        hint="OpticRip reads unencrypted BDMV folder trees and VIDEO_TS "
-             "folders; ISO/UDF images arrive later.")
+        hint="OpticRip reads unencrypted BDMV folder trees, VIDEO_TS "
+             "folders, devices and .iso images.  Nested VIDEO_TS/BDMV "
+             "inside a wrapper folder is handled too.  If the image is "
+             "encrypted, install libdvdcss (see docs/INSTALL.md).")
 
 
 def cmd_inspect(args, log: LogBus) -> int:
@@ -55,6 +57,14 @@ def cmd_inspect(args, log: LogBus) -> int:
     tc = Toolchain.detect(
         ffmpeg_path=settings.ffmpeg_path, ffprobe_path=settings.ffprobe_path,
         extra_paths=settings.tool_search_paths, log=log)
+    css = tc.dvdcss_path()
+    if css:
+        log.info(f"CSS: libdvdcss found ({os.path.basename(css)}) - encrypted "
+                 "DVDs decrypt via its key derivation", context="cli")
+    else:
+        log.info("CSS: no libdvdcss installed - unencrypted discs work; "
+                 "encrypted discs error honestly", context="cli")
+
     for capability, ok, detail in tc.capabilities_report():
         if not ok:
             log.warning(f"missing capability: {capability} ({detail})", context="cli")

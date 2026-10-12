@@ -145,7 +145,8 @@ class FfmpegDvdExtractor(StreamExtractor):
         try:
             proc = subprocess.Popen(
                 args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True)
+                text=True,
+                env={**os.environ, **self.tc.dvdcss_env()})
         except FileNotFoundError as exc:
             raise ToolMissingError("ffmpeg disappeared between check and run",
                                    detail=str(exc)) from exc

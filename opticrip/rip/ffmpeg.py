@@ -22,6 +22,16 @@ import re
 import shutil
 import subprocess
 
+def css_env() -> dict[str, str]:
+    """Subprocess-env overrides exposing a user-installed libdvdcss to
+    ffmpeg's libdvdread (see opticrip.disc.dvdcss).  Never ships a decoder
+    itself."""
+    try:
+        from .tools import Toolchain
+        return Toolchain().dvdcss_env()
+    except Exception:
+        return {}
+
 from ..core.errors import CancelledError, RemuxError, ToolMissingError
 from ..core.interfaces import (
     CancelCheck,
@@ -166,7 +176,8 @@ class FFmpegRemuxer(Remuxer):
 
         try:
             proc = subprocess.Popen(args, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True)
+                                    stderr=subprocess.PIPE, text=True,
+                                    env={**os.environ, **css_env()})
         except FileNotFoundError as exc:
             raise ToolMissingError("ffmpeg disappeared between check and run") from exc
         total = extracted.size_bytes or 0

@@ -191,6 +191,23 @@ class Toolchain:
         return (self.ffmpeg.available
                 and "bluray" in self.ffmpeg.features.get("protocols", []))
 
+    def dvdcss_path(self) -> str | None:
+        """Locate a user-installed libdvdcss (not shipped).
+
+        Present means ffmpeg's libdvdread can CSS-decrypt at runtime.  The
+        returned directory must be reachable by the dynamic loader.
+        """
+        from ..disc.dvdcss import find_dvdcss
+        return find_dvdcss()
+
+    def dvdcss_env(self) -> dict[str, str]:
+        """Subprocess-env overrides exposing libdvdcss to libdvdread."""
+        path = self.dvdcss_path()
+        if not path:
+            return {}
+        from ..disc.dvdcss import dvdcss_env
+        return dvdcss_env(path)
+
     def mkv_muxing(self) -> bool:
         return (self.ffmpeg.available
                 and "matroska" in self.ffmpeg.features.get("muxers", [])) \

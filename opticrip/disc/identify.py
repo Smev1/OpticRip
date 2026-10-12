@@ -133,6 +133,31 @@ class MediaProbe(ABC):
     def probe(self, device_path: str) -> MediaProbeResult: ...
 
 
+def _u32_le(chunk: bytes, offset: int) -> int:
+    return int.from_bytes(chunk[offset:offset + 4], "little")
+
+
+def _classify_iso9660_root(fd: int, pvd: bytes, fallback):
+    """Peek the ISO9660 PVD root-directory extent for VIDEO_TS / BDMV.
+
+    Reads the root directory's extent bytes directly (no full tree walk) and
+    matches directory-record identifiers case-insensitively.  Returns
+    ``fallback`` on any problem - classification here is advisory only.
+    """
+    try:
+        root_lba = _u32_le(pvd, 156 + 2)
+        root_size = _u32_le(pvd, 156 + 10)
+        blob = os.pread(fd, root_size, root_lba * SECTOR)
+        upper = blob.upper()
+        if b"VIDEO_TS" in upper:
+            return MediaType.DVD_VIDEO
+        if b"BDMV" in upper:
+            return MediaType.BLURAY
+    except Exception:
+        pass
+    return fallback
+
+
 class LinuxMediaProbe(MediaProbe):
     """Real 2048-byte-sector probing of a block device using ``os.pread``.
 
@@ -225,9 +250,12 @@ class LinuxMediaProbe(MediaProbe):
                     result.media_type = MediaType.DATA
                 return result
 
-            # Filesystem recognised: content is decided by the callers that can
-            # walk the tree (iso9660 / directory analyzers).
+            # Filesystem recognised: cheap content classification so image
+            # paths already surface DVD-Video/Blu-ray instead of "unknown
+            # data disc"; the analyzers still do the real structural work.
             result.media_type = MediaType.UNKNOWN
+            result.media_type = _classify_iso9660_root(
+                fd, pvd, result.media_type)
             return result
         except OSError as exc:
             result.error = f"read error while probing {device_path}: {exc.strerror}"

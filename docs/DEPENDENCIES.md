@@ -85,3 +85,18 @@ pip install -e '.[gui]'
   plain file reads when the path is a file on every platform.
 * Build: `pyinstaller packaging/opticrip-win.spec` (see README's Windows
   section); CI builds it in `.github/workflows/windows-build.yml`.
+
+## libdvdcss (optional, user-installed — Phase 10)
+
+Not a packaged dependency. If the *user* has installed libdvdcss on their
+system, OpticRip finds it (`disc/dvdcss.py`) and prepends its directory to
+the subprocess environment (`LD_LIBRARY_PATH` on Linux, `PATH` on Windows)
+so ffmpeg's libdvdread can runtime-load it — enabling CSS decryption the
+way HandBrake does. OpticRip never bundles, downloads or links libdvdcss;
+see docs/PROTECTED_DISCS.md for the policy.
+
+* Debian/Ubuntu: `sudo apt install libdvd-pkg` (then `sudo dpkg-reconfigure libdvd-pkg`)
+* Windows: community DLL builds, e.g. github.com/allienx/libdvdcss-dll —
+  place `libdvdcss-2.dll` in the same directory as ffmpeg.exe, `dist\OpticRip\_bin\`,
+  or anywhere on PATH.
+* The CLI prints which of the two states applies at startup.

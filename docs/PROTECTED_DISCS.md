@@ -36,8 +36,33 @@ practical cost is equally real: BD+ is executable content on the disc, and
 * Play the disc normally in a licensed player — the fair-use copy question is
   between you, your jurisdiction, and tools built by others with the relevant
   licences.
+* Install **libdvdcss** yourself (Debian: `libdvd-pkg`; Windows: community
+  `libdvdcss-2.dll` builds).  It is an *external* program OpticRip never
+  bundles or downloads; the next section explains how OpticRip cooperates
+  with it without shipping it.
 * Keep OpticRip for your own recordings and unprotected authorings, where the
   `extract → remux → validate` pipeline is fully implemented.
+
+## libdvdcss co-operation policy (Phase 10)
+
+OpticRip's DVD path goes through ffmpeg's `dvdvideo` demuxer, whose libdvdread
+dependency can use libdvdcss at runtime when that library was built for
+dynamic loading (Linux: `dlopen`; Windows: `LoadLibrary("libdvdcss-2.dll")`).
+OpticRip therefore:
+
+1. **searches** for an already-installed libdvdcss (settings tool paths →
+   next to ffmpeg → `_bin/` → system loader paths) — `disc/dvdcss.py`;
+2. **prepends the found library's directory** to the `LD_LIBRARY_PATH`
+   (Linux) / `PATH` (Windows) inherited by the ffmpeg/ffprobe subprocesses,
+   so libdvdread can locate it — pure PATH plumbing, no API use, no linking;
+3. **reports** what it found in the CLI/GUI diagnostics: "libdvdcss found" or
+   "no libdvdcss installed - unencrypted discs work; encrypted discs error
+   honestly".
+
+OpticRip still contains no decryption code and no decoder distribution.
+Whether using libdvdcss on a given disc in a given jurisdiction is lawful is
+the user's decision and responsibility; VideoLAN cites a French Conseil
+d'État decision of 16 July 2008 for its publication.
 
 ## The seam, deliberately clean
 
