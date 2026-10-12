@@ -235,6 +235,59 @@ class TestIsoDirectInput:
         assert DvdIfoAnalyzer(None).can_handle(drive, fs)
 
 
+class TestShortBlockReads:
+    """os.read/os.pread may return short counts (seen on Windows, where a
+    runt sector read broke ISO parsing with 'malformed ISO9660 directory
+    record'). FileBlockDevice must loop to full length."""
+
+    def test_iso_parses_despite_short_os_reads(self, tmp_path, monkeypatch):
+        pycdlib = pytest.importorskip("pycdlib")
+        vts = tmp_path / "VIDEO_TS"
+        vts.mkdir(exist_ok=True)
+        ifo = b"DVDMRVH" + b"\x00" * 6 + (12).to_bytes(4, "little") + b"\x00" * 1988
+        p1 = vts / "VIDEO_TS.IFO"; p1.write_bytes(ifo)
+        big = tmp_path / "_pad.bin"; big.write_bytes(b"\x00" * (64 * 2048))
+        iso_path = str(tmp_path / "movie.iso")
+        pkg = pycdlib.PyCdlib(); pkg.new(interchange_level=3)
+        pkg.add_directory('/VIDEO_TS')
+        pkg.add_file(str(p1), '/VIDEO_TS/VIDEO_TS.IFO')
+        pkg.add_file(str(big), '/VIDEO_TS/PAD.BIN')
+        pkg.write(iso_path); pkg.close()
+
+        # Dribble every OS read to <=100 bytes, like a short-reading platform.
+        import os as _os
+        real_pread = _os.pread
+        real_read = _os.read
+        monkeypatch.setattr(
+            _os, "pread",
+            lambda fd, n, off: real_pread(fd, min(n, 100), off))
+        monkeypatch.setattr(
+            _os, "read",
+            lambda fd, n: real_read(fd, min(n, 100)))
+
+        from opticrip.disc.fs import FileBlockDevice, Iso9660Disc
+        dev = FileBlockDevice(iso_path)
+        try:
+            fs = Iso9660Disc(dev)
+            assert fs.find_case_insensitive(
+                "VIDEO_TS/VIDEO_TS.IFO") is not None
+            assert fs.getfile("VIDEO_TS/VIDEO_TS.IFO").read(0, 8)[:7] == b"DVDMRVH"
+        finally:
+            dev.close()
+
+    def test_file_block_device_reads_full(self, tmp_path):
+        # FileBlockDevice must loop short os.read counts to full length.
+        from opticrip.disc.fs import FileBlockDevice
+        f = tmp_path / "blob.bin"
+        f.write_bytes(bytes(range(256)) * 20)
+        dev = FileBlockDevice(str(f))
+        try:
+            assert dev.read(0, 2048) == bytes(range(256)) * 8
+            assert dev.read(100, 500) == (bytes(range(256)) * 20)[100:600]
+        finally:
+            dev.close()
+
+
 class TestDvdcssDiscovery:
     def test_env_builder_prepends_dir(self):
         import sys

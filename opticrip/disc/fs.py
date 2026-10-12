@@ -78,19 +78,36 @@ class FileBlockDevice(BlockDevice):
         return self._size
 
     def read(self, offset: int, length: int) -> bytes:
+        # ``os.read``/``os.pread`` may legally return short counts (observed
+        # on Windows, where runt sector reads broke ISO parsing), so loop
+        # until the request is satisfied or EOF.  Callers rely on full
+        # sectors; returning b""/short data only happens at EOF.
         if length <= 0:
             return b""
         offset = max(0, offset)
         try:
             if hasattr(os, "pread"):
-                return os.pread(self._fd, length, offset)
+                out = bytearray()
+                while len(out) < length:
+                    chunk = os.pread(self._fd, length - len(out),
+                                     offset + len(out))
+                    if not chunk:
+                        break
+                    out += chunk
+                return bytes(out)
             # Windows (and any other non-pread platform): seek+read. The
             # fd is per-instance so cross-talk is the caller's concern --
             # matches the single-threaded probe design.
             cur = os.lseek(self._fd, 0, os.SEEK_CUR)
             try:
                 os.lseek(self._fd, offset, os.SEEK_SET)
-                return os.read(self._fd, length)
+                out = bytearray()
+                while len(out) < length:
+                    chunk = os.read(self._fd, length - len(out))
+                    if not chunk:
+                        break
+                    out += chunk
+                return bytes(out)
             finally:
                 os.lseek(self._fd, cur, os.SEEK_SET)
         except OSError as exc:
