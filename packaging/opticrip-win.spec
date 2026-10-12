@@ -13,8 +13,10 @@
 
 import os
 
-_SOURCES = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
-_BUNDLED_BIN = os.path.join(os.path.dirname(__file__), "win", "_bin")
+# PyInstaller exec()s the spec file: no __file__ — use the SPECPATH global
+# it injects (absolute path of the spec's directory).
+_SOURCES = os.path.normpath(os.path.join(SPECPATH, ".."))
+_BUNDLED_BIN = os.path.join(SPECPATH, "win", "_bin")
 
 binaries = []
 if os.path.isdir(_BUNDLED_BIN):
