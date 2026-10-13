@@ -111,7 +111,8 @@ class BdPlaylistExtractor(StreamExtractor):
                     "-muxrate", "24000000",
                     "-f", "mpegts",
                     temp_path]   # output file goes to ffmpeg, not stdout
-            res = subprocess.run(args, stderr=subprocess.PIPE)
+            from . import subproc
+            res = subproc.run(args, stderr=subprocess.PIPE)
             if res.returncode != 0:
                 stderr = res.stderr.decode("utf-8", "replace")
                 raise classify_ffmpeg_failure(stderr)

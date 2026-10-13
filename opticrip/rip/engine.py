@@ -286,7 +286,17 @@ class RipEngine:
         for extractor in self.extractors:
             if extractor.can_handle(job.drive_as_drive(), job.title):
                 return extractor
+        ffmpeg = self.tc.ffmpeg
+        dvd_nav = self.tc.dvd_navigation()
         raise E.ExtractionError(
             f"no extractor can handle {job.drive_device} / "
             f"{job.title.display_name}",
-            hint="This source type may not be supported yet.")
+            hint=(
+                "Folder rips need VIDEO_TS on disk (the dvd-cell extractor "
+                "reads VOBs directly); images and drives need an ffmpeg build "
+                "with the dvdvideo demuxer (libdvdread/libdvdnav). "
+                f"ffmpeg={'found' if ffmpeg.available else 'NOT FOUND'}"
+                f"{' at ' + ffmpeg.path if ffmpeg.available else ''}, "
+                f"dvdvideo demuxer={'present' if dvd_nav else 'missing'}. "
+                "See docs/INSTALL.md."),
+            detail=f"extractors tried: {[e.name for e in self.extractors]}")

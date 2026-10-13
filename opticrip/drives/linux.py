@@ -200,7 +200,8 @@ class LinuxDriveProvider(DriveProvider):
 def blkid_label(device: str) -> str | None:
     """Ask ``blkid`` for the volume label; returns ``None`` on any failure."""
     try:
-        out = subprocess.run(["blkid", "-o", "value", "-s", "LABEL", device],
+        from ..rip import subproc
+        out = subproc.run(["blkid", "-o", "value", "-s", "LABEL", device],
                              capture_output=True, text=True, timeout=5, check=False)
     except (OSError, subprocess.SubprocessError):
         return None
@@ -211,7 +212,7 @@ def blkid_label(device: str) -> str | None:
 def lsblk_inventory() -> list[dict[str, str]]:
     """``lsblk -J`` parsing used by the diagnostics panel, never required."""
     try:
-        out = subprocess.run(["lsblk", "-J", "-o", "NAME,TYPE,SIZE,MODEL,TRAN"],
+        out = subproc.run(["lsblk", "-J", "-o", "NAME,TYPE,SIZE,MODEL,TRAN"],
                              capture_output=True, text=True, timeout=5, check=False)
     except (OSError, subprocess.SubprocessError):
         return []

@@ -143,7 +143,8 @@ class FfmpegDvdExtractor(StreamExtractor):
         log.info(f"running ffmpeg dvdvideo title={title_arg}")
 
         try:
-            proc = subprocess.Popen(
+            from . import subproc
+            proc = subproc.popen(
                 args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=True,
                 env={**os.environ, **self.tc.dvdcss_env()})
@@ -212,9 +213,19 @@ class PassthroughExtractor(StreamExtractor):
         self.tc = toolchain or Toolchain.detect()
         self._log = log or LogBus()
 
+    #: containers ffmpeg can demux straight out of the box
+    MEDIA_SUFFIXES = (".vob", ".m2ts", ".mts", ".mpg", ".mpeg", ".ts",
+                      ".mkv", ".mp4", ".mov", ".avi", ".m2v", ".ps")
+
     def can_handle(self, drive: Drive, title: Title) -> bool:
-        # Accepts anything that is not a nav-required DVD title.
-        return title.source_ref.get("kind") not in ("dvd-pgc",)
+        # Only claim a source that really is a demuxable media *file*.
+        # Claiming folders/images here used to swallow the job and fail
+        # inside ffmpeg with a confusing error, hiding the real cause
+        # (e.g. an ffmpeg build without the dvdvideo demuxer).
+        if title.source_ref.get("kind") == "dvd-pgc":
+            return False
+        path = (drive.path or "")
+        return path.lower().endswith(self.MEDIA_SUFFIXES) and os.path.isfile(path)
 
     def extract(self, drive: Drive, title: Title, selection: TitleSelection,
                 work_dir: str, *, progress: ProgressCallback = null_progress,

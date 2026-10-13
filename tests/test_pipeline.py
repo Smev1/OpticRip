@@ -201,3 +201,59 @@ class TestFullPipeline:
         assert not result.ok
         assert job.error, "an error message must be surfaced"
         assert job.error_title
+
+
+# --------------------------------------------------------------------------- #
+# Phase 10c: ISO images rip through our own extractor (no libdvdread needed)
+# --------------------------------------------------------------------------- #
+class TestIsoRipPipeline:
+    def test_iso_rips_to_valid_mkv(self, tmp_path, dvd_fixture):
+        """An .iso built from the synthetic DVD tree must rip end-to-end.
+
+        The dvd-cell extractor addresses VOB extents through our ISO9660
+        reader, so this works even where ffmpeg lacks the dvdvideo demuxer.
+        """
+        pytest.importorskip("pycdlib")
+        import pycdlib
+        from opticrip.core.config import Settings
+        from opticrip.core.models import RipJob, TitleSelection, new_id
+        from opticrip.disc.fs import open_disc_filesystem
+        from opticrip.disc.dvd import DvdIfoAnalyzer
+        from opticrip.drives.virtual import AutoPathProvider
+        from opticrip.rip.engine import RipEngine
+
+        # pack the existing synthetic tree into an ISO
+        iso_path = str(tmp_path / "disc.iso")
+        pkg = pycdlib.PyCdlib()
+        pkg.new(interchange_level=3)
+        pkg.add_directory("/VIDEO_TS")
+        vts_dir = os.path.join(dvd_fixture, "VIDEO_TS")
+        for name in sorted(os.listdir(vts_dir)):
+            pkg.add_file(os.path.join(vts_dir, name),
+                         "/VIDEO_TS/" + name.upper())
+        pkg.write(iso_path)
+        pkg.close()
+
+        drive = AutoPathProvider([iso_path]).list_drives()[0]
+        assert drive.kind.label == "Disc image"
+        fs = open_disc_filesystem(drive.path)
+        analysis = DvdIfoAnalyzer().analyze(drive, fs)
+        assert analysis.titles, "fixture must expose at least one title"
+
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+        title = analysis.titles[0]
+        settings = Settings()
+        settings.output_dir = str(out_dir)
+        settings.overwrite_policy = "overwrite"
+        job = RipJob(
+            id=new_id(), drive_device=drive.path, title=title,
+            selection=TitleSelection.all_streams(title),
+            output_path=str(out_dir / "disc.mkv"),
+            disc_label=analysis.disc.label,
+            media_type=analysis.disc.media_type,
+            drive_kind=drive.kind,
+        )
+        result = RipEngine(settings).run(job)
+        assert result.ok, (job.error_title, job.error, job.error_hint)
+        assert os.path.getsize(result.output_path) > 0

@@ -100,3 +100,24 @@ see docs/PROTECTED_DISCS.md for the policy.
   place `libdvdcss-2.dll` in the same directory as ffmpeg.exe, `dist\OpticRip\_bin\`,
   or anywhere on PATH.
 * The CLI prints which of the two states applies at startup.
+
+## Windows bundle: what ships, and where to look when a rip fails
+
+The CI-built `OpticRip-windows` artifact now bundles **ffmpeg.exe** and
+**ffprobe.exe** in `dist\OpticRip\_internal\_bin\` (BtbN win64 GPL build:
+libdvdread + libdvdnav + libbluray, so `-demuxers` lists `dvdvideo`). The
+workflow fails the build if the downloaded ffmpeg lacks `dvdvideo`, because
+folder/image rips depend on it.
+
+Diagnostics for "the queue failed but I don't know why":
+
+* every job failure is logged with its **title, message and hint** into the
+  GUI Log tab (the queue now shares the GUI's `LogBus`), and the Queue row
+  shows the reason text with the hint in its tooltip;
+* a session log is appended to `%USERPROFILE%\.opticrip\opticrip-gui.log`;
+* `opticrip-cli.exe inspect <source>` prints the toolchain capabilities
+  (ffmpeg path, `dvdvideo` present/missing, libdvdcss found) up front.
+
+Console windows never flash: every child process is spawned with
+`CREATE_NO_WINDOW` (see `opticrip/rip/subproc.py`), and the toolchain probe is
+memoised so a queue does not re-run `ffmpeg -version` per job.

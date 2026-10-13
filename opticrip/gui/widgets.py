@@ -80,40 +80,33 @@ class QueuePanel(QWidget):
         row.addWidget(self.cancel_btn)
         lay.addLayout(row)
         self._rows: dict[str, QListWidgetItem] = {}
+        self._names: dict[str, str] = {}
 
     # -- events (always on the GUI thread via QueueBridge) --------------- #
     def on_queue_event(self, ev) -> None:
         job_id = ev.job_id
-        name = ev.message or job_id
+        item = self._rows.get(job_id)
+        if item is None:
+            item = QListWidgetItem()
+            item.setData(Qt.UserRole, job_id)
+            self.list.addItem(item)
+            self._rows[job_id] = item
         if ev.kind == "added":
-            item = self._rows.get(job_id)
-            if item is None:
-                item = QListWidgetItem()
-                item.setData(Qt.UserRole, job_id)
-                self.list.addItem(item)
-                self._rows[job_id] = item
-            item.setText(f"⏳  {name} — queued")
+            self._names[job_id] = ev.message or job_id
+            item.setText(f"⏳  {self._names[job_id]} — queued")
             item.setForeground(Qt.lightGray)
             item.setData(Qt.UserRole + 1, "queued")
         elif ev.kind == "started":
-            item = self._rows.get(job_id)
-            if item:
-                item.setText(f"▶  {name} — running")
-                item.setData(Qt.UserRole + 1, "running")
+            self._names.setdefault(job_id, ev.message or job_id)
+            item.setText(f"▶  {self._names[job_id]} — running")
+            item.setData(Qt.UserRole + 1, "running")
         elif ev.kind == "progress" and ev.update is not None:
-            item = self._rows.get(job_id)
-            if item:
-                pct = ev.update.percent if ev.update.percent is not None else 0
-                item.setText(
-                    f"▶  {name} — {ev.update.phase.label}: "
-                    f"{ev.update.message} ({pct:.0f}%)")
+            name = self._names.get(job_id, job_id)
+            pct = ev.update.percent if ev.update.percent is not None else 0
+            item.setText(f"▶  {name} — {ev.update.phase.label}: "
+                         f"{ev.update.message} ({pct:.0f}%)")
         elif ev.kind == "result":
-            item = self._rows.get(job_id)
-            if item is None:
-                item = QListWidgetItem()
-                item.setData(Qt.UserRole, job_id)
-                self.list.addItem(item)
-                self._rows[job_id] = item
+            name = self._names.get(job_id, job_id)
             r = ev.result
             if r.ok:
                 size = f"{r.size_bytes / 1e6:,.1f} MB" if r.size_bytes else "done"
@@ -121,9 +114,16 @@ class QueuePanel(QWidget):
                 item.setForeground(Qt.darkGreen)
                 item.setData(Qt.UserRole + 1, "done")
             else:
-                item.setText(f"❌  {name} — failed: {ev.message or 'error'}")
+                # the *reason* is the whole point of the row: prefer the
+                # result's warnings, fall back to the event message
+                reason = ((r.warnings[0] if r.warnings else "") or ev.message
+                          or "failed")
+                item.setText(f"❌  {name} — {reason}")
                 item.setForeground(Qt.darkRed)
                 item.setData(Qt.UserRole + 1, "failed")
+                if r.warnings:
+                    item.setToolTip("\n".join(str(w) for w in r.warnings))
+                item.setFlags(item.flags() | Qt.ItemIsSelectable)
 
     def selected_job_id(self) -> str | None:
         item = self.list.currentItem()

@@ -47,9 +47,10 @@ class TestShell:
         assert w.queue_panel.list.count() == 1
         assert "running" in w.queue_panel.list.item(0).text()
         w.queue_panel.on_queue_event(QueueEvent(kind="result", job_id=jid,
-                                                message="Title 1",
-                                                result=None_stage()))
-        assert "failed" in w.queue_panel.list.item(0).text()
+                                                message="Failed",
+                                                result=failed_result()))
+        # the row must name the *reason*, not just "failed"
+        assert "no ffmpeg" in w.queue_panel.list.item(0).text()
 
     def test_log_panel_tails_records(self, qapp):
         w = _mkwindow(qapp)
@@ -84,7 +85,35 @@ class TestShell:
         assert w.title_table.checked_rows() != [] or True  # rows still exist
 
 
-def None_stage():
-    """A failed RipResult stand-in without depending on engine internals."""
+def failed_result():
+    """A failed RipResult carrying a human-readable reason."""
     from opticrip.core.models import RipResult
-    return RipResult(job_id="t", ok=False, output_path="", size_bytes=0)
+    return RipResult(job_id="t", ok=False, output_path="", size_bytes=0,
+                     warnings=["no ffmpeg found on PATH"])
+
+
+class TestFailureVisibility:
+    """Failures must be visible and diagnosable from the GUI alone."""
+
+    def test_failed_job_shows_reason_and_tooltip(self, qapp):
+        w = _mkwindow(qapp)
+        from opticrip.rip.queue import QueueEvent
+        jid = "job-1"
+        w.queue_panel.on_queue_event(QueueEvent(kind="added", job_id=jid,
+                                                message="Title 1"))
+        w.queue_panel.on_queue_event(QueueEvent(
+            kind="result", job_id=jid, message="Failed",
+            result=failed_result()))
+        item = w.queue_panel.list.item(0)
+        assert "Title 1" in item.text()
+        assert "no ffmpeg" in item.text()
+        assert "no ffmpeg" in item.toolTip()
+
+    def test_gui_queue_uses_gui_log_bus(self, qapp):
+        w = _mkwindow(qapp)
+        q = w._ensure_queue()
+        assert q._bus is w.log_bus
+
+    def test_session_log_file_configured(self, qapp):
+        w = _mkwindow(qapp)
+        assert hasattr(w, "_log_file")

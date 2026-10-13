@@ -137,11 +137,36 @@ class MainWindow(QMainWindow):
         self._bridge: QueueBridge | None = None
         self._tabs: QTabWidget | None = None
         self._queue_tab: QWidget | None = None
+        self._log_file = None
 
         self._build_ui()
         self.setStyleSheet(QSS)
 
         self.log_bus.subscribe(self.log_panel.on_log_record)
+        self._log_file = self._open_log_file()
+        if self._log_file is not None:
+            self.log_bus.subscribe(self._write_log_record, replay=False)
+
+    def _open_log_file(self):
+        """Append-mode session log, so a failed rip can be diagnosed later."""
+        try:
+            from ..core.config import default_output_dir
+            base = os.path.join(os.path.expanduser("~"), ".opticrip")
+            os.makedirs(base, exist_ok=True)
+            path = os.path.join(base, "opticrip-gui.log")
+            handle = open(path, "a", encoding="utf-8")
+            self.log_bus.info(f"session log: {path}", context="gui")
+            return handle
+        except OSError:
+            return None
+
+    def _write_log_record(self, record) -> None:
+        try:
+            if self._log_file is not None:
+                self._log_file.write(record.to_line() + "\n")
+                self._log_file.flush()
+        except OSError:
+            self._log_file = None
 
     # ------------------------------------------------------------------ #
     def _build_ui(self) -> None:
@@ -279,7 +304,7 @@ class MainWindow(QMainWindow):
     def _ensure_queue(self) -> JobQueue:
         if self.queue is None:
             self.log_bus.info("queue created (not started)", context="gui")
-            self.queue = JobQueue(self.settings)
+            self.queue = JobQueue(self.settings, log=self.log_bus)
             self._bridge = QueueBridge(self.queue_panel, self)
             self.queue.subscribe(self._bridge)
         return self.queue
@@ -370,6 +395,12 @@ class MainWindow(QMainWindow):
                 self.queue.stop(wait=False)
             except Exception:
                 pass
+        if self._log_file is not None:
+            try:
+                self._log_file.close()
+            except Exception:
+                pass
+            self._log_file = None
 
     def closeEvent(self, event) -> None:   # pragma: no cover - Qt teardown
         self._shutdown_queue()

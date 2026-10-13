@@ -57,12 +57,12 @@ def _input_stream_count(extracted: "ExtractionResult") -> int:
     """
     try:
         import json as _json
-        import subprocess as _subprocess
+        from . import subproc
         ffprobe = shutil.which("ffprobe") or ""
         path = extracted.paths[0] if extracted.paths else ""
         if not ffprobe or not path:
             return len(extracted.streams)
-        proc = _subprocess.run(
+        proc = subproc.run(
             [ffprobe, "-hide_banner", "-loglevel", "error",
              "-show_entries", "stream=index", "-print_format", "json", path],
             capture_output=True, text=True, timeout=30, check=False)
@@ -175,9 +175,10 @@ class FFmpegRemuxer(Remuxer):
         log.debug(" ".join(args))
 
         try:
-            proc = subprocess.Popen(args, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True,
-                                    env={**os.environ, **css_env()})
+            from . import subproc
+            proc = subproc.popen(args, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True,
+                                 env={**os.environ, **css_env()})
         except FileNotFoundError as exc:
             raise ToolMissingError("ffmpeg disappeared between check and run") from exc
         total = extracted.size_bytes or 0
@@ -270,8 +271,9 @@ class MkvmergeRemuxer(Remuxer):
                 args += [f"--language", f"0:{sub_n}:{stream.language}"]
                 sub_n += 1
         try:
-            proc = subprocess.Popen(args, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True)
+            from . import subproc
+            proc = subproc.popen(args, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True)
         except FileNotFoundError as exc:
             raise ToolMissingError("mkvmerge disappeared between check and run") from exc
         try:

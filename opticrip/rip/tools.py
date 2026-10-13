@@ -46,9 +46,10 @@ class ToolInfo:
 
 
 def _run(args: list[str], timeout: float = 10.0) -> tuple[int, str, str]:
+    from . import subproc
     try:
-        proc = subprocess.run(args, capture_output=True, text=True,
-                              timeout=timeout, check=False)
+        proc = subproc.run(args, capture_output=True, text=True,
+                           timeout=timeout, check=False)
         return proc.returncode, proc.stdout, proc.stderr
     except (OSError, subprocess.SubprocessError) as exc:
         return -1, "", str(exc)
@@ -149,6 +150,14 @@ def _parse_protocols(text: str) -> list[str]:
     return names
 
 
+@lru_cache(maxsize=8)
+def _detect_cached(log, ffmpeg_path: str, ffprobe_path: str, mkvmerge_path: str,
+                   extra_paths: tuple[str, ...]):
+    """Memoised toolchain probe (see Toolchain.detect)."""
+    return Toolchain._probe(log, ffmpeg_path, ffprobe_path, mkvmerge_path,
+                            extra_paths)
+
+
 class Toolchain:
     """Discovered tools + their capabilities."""
 
@@ -164,7 +173,20 @@ class Toolchain:
     def detect(cls, *, ffmpeg_path: str = "", ffprobe_path: str = "",
                mkvmerge_path: str = "", extra_paths: list[str] | None = None,
                log: LogBus | None = None) -> "Toolchain":
-        chain = cls(log=log)
+        # Probing spawns up to three subprocesses (ffmpeg/ffprobe/mkvmerge
+        # -version).  Options that change the answer are part of the cache
+        # key, so callers still get fresh results after changing settings;
+        # repeated identical calls (one per job, one per diagnostics redraw)
+        # cost nothing and - on Windows - flash no console windows.
+        return _detect_cached(log, ffmpeg_path, ffprobe_path, mkvmerge_path,
+                              tuple(extra_paths or ()))
+
+    # -- implementation -------------------------------------------------- #
+    @staticmethod
+    def _probe(log: LogBus | None, ffmpeg_path: str, ffprobe_path: str,
+               mkvmerge_path: str, extra_paths: tuple[str, ...],
+               ) -> "Toolchain":
+        chain = Toolchain(log=log)
         chain.ffmpeg = _probe_ffmpeg(
             "ffmpeg", find_executable("ffmpeg", extra_paths=extra_paths,
                                       explicit=ffmpeg_path))
@@ -175,6 +197,7 @@ class Toolchain:
             find_executable("mkvmerge", extra_paths=extra_paths,
                             explicit=mkvmerge_path))
         chain.probed = True
+        return chain
         for tool in (chain.ffmpeg, chain.ffprobe, chain.mkvmerge):
             chain._log.info(tool.version_line, context="tools")
         return chain

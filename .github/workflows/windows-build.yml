@@ -28,6 +28,29 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest tests -q -x --deselect tests/test_bdmv.py::TestLibblurayConformance::test_ffmpeg_accepts_tree
 
+      - name: Download bundled ffmpeg + ffprobe (dvdvideo/bluray capable)
+        shell: pwsh
+        run: |
+          # GPL win64 build: includes libdvdread/libdvdnav (dvdvideo demuxer)
+          # and libbluray, which the engine requires for disc navigation.
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\ff.zip"
+          Expand-Archive "$env:RUNNER_TEMP\ff.zip" -DestinationPath "$env:RUNNER_TEMP\ff"
+          $ffmpeg = Get-ChildItem "$env:RUNNER_TEMP\ff" -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          New-Item -ItemType Directory -Force -Path "packaging/win/_bin" | Out-Null
+          Copy-Item $ffmpeg.FullName "packaging/win/_bin/ffmpeg.exe"
+          Copy-Item (Join-Path $ffmpeg.DirectoryName "ffprobe.exe") "packaging/win/_bin/ffprobe.exe"
+          # Fail loudly if this build cannot decode discs - the whole point of
+          # bundling is that folder/image rips work out of the box.
+          $demuxers = & "packaging/win/_bin/ffmpeg.exe" -hide_banner -demuxers
+          if (-not ($demuxers | Select-String -Quiet "dvdvideo")) {
+            throw "bundled ffmpeg lacks the dvdvideo demuxer"
+          }
+          $protocols = & "packaging/win/_bin/ffmpeg.exe" -hide_banner -protocols
+          if (-not ($protocols | Select-String -Quiet "bluray")) {
+            Write-Warning "bundled ffmpeg lacks the bluray protocol"
+          }
+
       - name: Build OpticRip.exe bundle
         run: pyinstaller packaging/opticrip-win.spec --noconfirm
 

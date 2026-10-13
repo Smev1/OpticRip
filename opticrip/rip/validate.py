@@ -61,7 +61,8 @@ class FfprobeValidator(OutputValidator):
                 "-show_streams", "-show_format", "-show_chapters",
                 "-print_format", "json", path]
         try:
-            proc = subprocess.run(args, capture_output=True, text=True,
+            from . import subproc
+            proc = subproc.run(args, capture_output=True, text=True,
                                   timeout=120, check=False)
         except (OSError, subprocess.SubprocessError) as exc:
             raise ValidationFailedError(f"ffprobe could not run on {path}",

@@ -61,9 +61,13 @@ class JobQueue:
                  log: LogBus | None = None,
                  engine_factory: Callable[[], RipEngine] | None = None) -> None:
         self.settings = settings
-        self.log = (log or LogBus()).bind("queue")
+        # keep the unbound bus: the engine binds its own context
+        self._bus = log or LogBus()
+        self.log = self._bus.bind("queue")
         self._engine_factory = (engine_factory or
-                                (lambda: RipEngine(self.settings)))
+                                (lambda: RipEngine(self.settings,
+                                                   log=self._bus)))
+        self._engine: RipEngine | None = None
         self._jobs: dict[str, RipJob] = {}
         self._order: list[str] = []
         self._lock = threading.RLock()
@@ -108,6 +112,17 @@ class JobQueue:
                 self.log.error("queue listener raised", context="queue")
 
     # -- job management -------------------------------------------------- #
+    def engine(self) -> RipEngine:
+        """The single engine instance this queue reuses.
+
+        Building one per job re-probed the toolchain (three subprocess
+        spawns) for every title, which on Windows means three console
+        flashes per job and wasted time.
+        """
+        if self._engine is None:
+            self._engine = self._engine_factory()
+        return self._engine
+
     def add(self, job: RipJob) -> None:
         with self._lock:
             if job.id in self._jobs:
@@ -274,7 +289,7 @@ class JobQueue:
         """
         self._emit(QueueEvent(kind="started", job_id=job.id,
                               message=job.display_name))
-        engine = self._engine_factory()
+        engine = self.engine()
         attempts_left = max(0, int(getattr(self.settings, "read_retries", 0)))
         result: RipResult | None = None
         try:
@@ -332,6 +347,10 @@ class JobQueue:
             job.error_hint = getattr(exc, "hint", None)
             result = RipResult(job_id=job.id, ok=False, output_path="",
                                warnings=[job.error])
+            self.log.error(f"{job.display_name}: {job.error_title}: "
+                           f"{job.error}")
+            if job.error_hint:
+                self.log.error(f"  hint: {job.error_hint}")
         except Exception as exc:                       # noqa: BLE001
             job.status = JobStatus.FAILED
             job.finished_at = time.time()
@@ -340,7 +359,13 @@ class JobQueue:
             job.error_hint = getattr(exc, "hint", None)
             result = RipResult(job_id=job.id, ok=False, output_path="",
                                warnings=[job.error])
-            self.log.error(f"job crashed: {job.error}")
+            self.log.error(f"{job.display_name}: {job.error_title}: "
+                           f"{job.error}")
+            if job.error_hint:
+                self.log.error(f"  hint: {job.error_hint}")
+            detail = getattr(exc, "detail", None)
+            if detail:
+                self.log.debug(f"  detail: {detail}")
         if result is None:                             # pragma: no cover
             job.status = JobStatus.FAILED
             result = RipResult(job_id=job.id, ok=False, output_path="")
@@ -349,6 +374,10 @@ class JobQueue:
         self._result_events[job.id].set()
         self._cancel_requested.discard(job.id)
         self.log.info(f"{job.status.label}: {job.display_name}")
+        message = job.status.label
+        if not result.ok and (job.error or result.warnings):
+            reason = job.error or (result.warnings[0] if result.warnings else "")
+            if reason:
+                message = f"{job.status.label}: {reason}"
         self._emit(QueueEvent(kind="result", job_id=job.id,
-                              message=f"{job.status.label}",
-                              result=result))
+                              message=message, result=result))

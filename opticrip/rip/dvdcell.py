@@ -43,6 +43,7 @@ from ..core.models import (
     TitleSelection,
     selection_to_streams,
 )
+from ..disc.fs import Iso9660Disc, open_disc_filesystem
 from .tools import Toolchain
 
 SECTOR = 2048
@@ -126,6 +127,52 @@ def _vob_files(vts_dir: str, vts_number: int) -> list[str]:
     return parts
 
 
+def _iso_vob_ranges(fs: "Iso9660Disc", vts_number: int):
+    """VOB parts for a title set inside an ISO image, as resolvable extents.
+
+    Returns ``[(extent_path, start_sector, n_sectors, lba), ...]`` where
+    ``lba`` is the absolute sector of the extent inside the image and
+    ``start_sector`` is the offset within the virtual VOB chain (what the IFO
+    cell addresses refer to).
+    """
+    ranges = []
+    total = 0
+    for i in range(1, VOB_FILES_PER_VTS + 1):
+        for base in (f"VIDEO_TS/VTS_{vts_number:02d}_{i}.VOB",
+                     f"VTS_{vts_number:02d}_{i}.VOB"):
+            resolved = None
+            try:
+                resolved = fs.find_case_insensitive(base)
+            except Exception:
+                resolved = None
+            if resolved:
+                entry = fs._find(fs._normalise(resolved))  # noqa: SLF001
+                if entry is not None and not entry.is_dir:
+                    n = (entry.size + SECTOR - 1) // SECTOR
+                    ranges.append((resolved, total, n, entry.lba))
+                    total += n
+                break
+    return ranges, total
+
+
+def _lba_for(ranges, path: str) -> int:
+    """Absolute LBA of a region when reading through an image."""
+    for name, _start, _n, lba in ranges:
+        if name == path and lba is not None:
+            return int(lba)
+    return 0
+
+
+class _IsoExtentReader:
+    """Reads decrypted/plain image sectors by absolute LBA."""
+
+    def __init__(self, fs: "Iso9660Disc") -> None:
+        self._device = fs.device
+
+    def read(self, lba: int, sectors: int) -> bytes:
+        return self._device.read_sectors(lba, sectors)
+
+
 def _sector_map(files: list[str]) -> tuple[list[tuple[str, int, int]], int]:
     """File, start_sector, n_sectors for each VOB part + total."""
     ranges = []
@@ -143,7 +190,8 @@ def _iter_sectors(ranges, start: int, end: int, chunk: int = 64) -> Iterator[tup
     # walk: find the file containing 'pos', then emit chunks until moving on.
     idx = 0
     while pos <= end and idx < len(ranges):
-        path, f_start, f_len = ranges[idx]
+        entry = ranges[idx]
+        path, f_start, f_len = entry[0], entry[1], entry[2]
         if pos < f_start or pos >= f_start + f_len:
             idx += 1
             continue
@@ -168,6 +216,12 @@ class DvdCellExtractor(StreamExtractor):
     def can_handle(self, drive: Drive, title: Title) -> bool:
         if drive.media_type is not MediaType.DVD_VIDEO:
             return False
+        # Folders: VOB files on disk.  Images: the same VOB files addressed
+        # through our own ISO9660 reader.  Raw devices still need libdvdnav
+        # (ffmpeg dvdvideo), so this extractor declines them rather than
+        # claiming the job and failing later.
+        if drive.kind not in (DriveKind.FOLDER, DriveKind.IMAGE):
+            return False
         ref = title.source_ref or {}
         return ref.get("kind") == "dvd-pgc" and bool(ref.get("cells"))
 
@@ -184,25 +238,35 @@ class DvdCellExtractor(StreamExtractor):
 
         cells = _select_angle_cells(all_cells, title, angle=int(
             title.source_ref.get("angle") or 1))
+        iso = None
 
-        # locate VOB parts
+        # locate VOB parts: on-disk files (folder) or ISO9660 extents (image)
         if drive.kind is DriveKind.FOLDER:
             vts_dir = os.path.join(drive.path, "VIDEO_TS")
             if not os.path.isdir(vts_dir):
                 vts_dir = drive.path
-        elif drive.kind is DriveKind.IMAGE:
-            raise ExtractionError(
-                "cell-level extraction needs a mounted/extracted VIDEO_TS or "
-                "a raw drive; use the ffmpeg dvdvideo path for images")
-        else:  # raw device
-            raise ExtractionError(
-                "raw-device cell copy needs the ISO9660 file system reader; "
-                "use the ffmpeg dvdvideo path for real drives")
-
-        files = _vob_files(vts_dir, vts)
-        if not files:
-            raise ExtractionError(f"no VOB files for VTS {vts:02d} under {vts_dir}")
-        ranges, total_sectors = _sector_map(files)
+            files = _vob_files(vts_dir, vts)
+            if not files:
+                raise ExtractionError(
+                    f"no VOB files for VTS {vts:02d} under {vts_dir}",
+                    hint="Check that the folder is a complete VIDEO_TS tree.")
+            ranges, total_sectors = _sector_map(files)
+            ranges = [(path, start, n, None) for path, start, n in ranges]
+            log.info(f"VOB parts: {files}")
+        else:  # IMAGE
+            fs = open_disc_filesystem(drive.path)
+            if not isinstance(fs, Iso9660Disc):
+                raise ExtractionError(
+                    f"{drive.path} is not an ISO9660 image",
+                    hint="UDF-only images need an ffmpeg build with the "
+                         "dvdvideo demuxer; re-author to ISO9660 or extract "
+                         "the tree to a folder.")
+            ranges, total_sectors = _iso_vob_ranges(fs, vts)
+            iso = _IsoExtentReader(fs)
+            if not ranges:
+                raise ExtractionError(
+                    f"no VOB extents for VTS {vts:02d} inside {drive.path}",
+                    hint="The image may be UDF-only or incomplete.")
 
         first = min(int(c["first_sector"]) for c in cells)
         last = max(int(c["last_sector"]) for c in cells)
@@ -214,7 +278,7 @@ class DvdCellExtractor(StreamExtractor):
         chunk_sectors = cells and max(
             int(c["last_sector"]) - int(c["first_sector"]) + 1 for c in cells)
         log.info(f"copying sectors [{first}, {last}] of VTS_{vts:02d} "
-                 f"({len(files)} file(s), {total_sectors} sectors total)")
+                 f"({len(ranges)} part(s), {total_sectors} sectors total)")
 
         os.makedirs(work_dir, exist_ok=True)
         temp_path = os.path.join(work_dir, f"extract-{title.id}.ps")
@@ -229,9 +293,13 @@ class DvdCellExtractor(StreamExtractor):
                 attempt = 0
                 while True:
                     try:
-                        with open(path, "rb") as src:
-                            src.seek(file_sector * SECTOR)
-                            data = src.read(count * SECTOR)
+                        if iso is not None:
+                            base_lba = _lba_for(ranges, path)
+                            data = iso.read(base_lba + file_sector, count)
+                        else:
+                            with open(path, "rb") as src:
+                                src.seek(file_sector * SECTOR)
+                                data = src.read(count * SECTOR)
                         break
                     except OSError as exc:
                         attempt += 1
