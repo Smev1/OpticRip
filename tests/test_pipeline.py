@@ -257,3 +257,39 @@ class TestIsoRipPipeline:
         result = RipEngine(settings).run(job)
         assert result.ok, (job.error_title, job.error, job.error_hint)
         assert os.path.getsize(result.output_path) > 0
+
+
+# --------------------------------------------------------------------------- #
+# regression: real discs put a navigation pack at the start of every VOBU.
+# The whole rip must survive that (it used to fail in the remux step with
+# "Only audio, video, and subtitles are supported for Matroska").
+# --------------------------------------------------------------------------- #
+class TestFolderRipWithNavigationPacks:
+    def test_folder_rip_with_nav_packs_produces_valid_mkv(self, tmp_path,
+                                                          have_ffmpeg):
+        if not have_ffmpeg:
+            pytest.skip("no ffmpeg")
+        from tests.synth import DvdFixtureSpec, write_dvd_fixture
+        write_dvd_fixture(str(tmp_path / "disc"), DvdFixtureSpec(
+            cell_seconds=2.0, cell_count=2, audio_streams=1,
+            subtitle_streams=1, nav_packs=True))
+        root = str(tmp_path / "disc")
+        fs = open_disc_filesystem(root)
+        drive = Drive(path=root, kind=DriveKind.FOLDER,
+                      media_type=MediaType.DVD_VIDEO)
+        analysis = DvdIfoAnalyzer().analyze(drive, fs)
+        settings = Settings().normalise()
+        settings.output_dir = str(tmp_path)
+        settings.overwrite_policy = "overwrite"
+        job = make_job(drive, analysis, str(tmp_path / "nav.mkv"))
+        result = RipEngine(settings).run(job)
+        assert result.ok, (job.error_title, job.error, job.error_hint)
+
+        probe = subprocess.run(
+            ["ffprobe", "-hide_banner", "-loglevel", "error", "-show_streams",
+             "-print_format", "json", result.output_path],
+            capture_output=True, text=True, timeout=60)
+        kinds = [s["codec_type"] for s in json.loads(probe.stdout)["streams"]]
+        assert "video" in kinds and "audio" in kinds, kinds
+        assert "data" not in kinds, kinds
+        assert result.validation is not None and result.validation.ok

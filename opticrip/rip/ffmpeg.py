@@ -21,6 +21,7 @@ import os
 import re
 import shutil
 import subprocess
+from dataclasses import dataclass, field
 
 def css_env() -> dict[str, str]:
     """Subprocess-env overrides exposing a user-installed libdvdcss to
@@ -48,30 +49,121 @@ from .tools import Toolchain
 _KNOWN_SAFETY_FLAGS = ("-loglevel", "warning", "-nostdin", "-hide_banner")
 
 
-def _input_stream_count(extracted: "ExtractionResult") -> int:
-    """Number of streams actually present in the extracted media.
+#: ffprobe ``codec_type`` -> our :class:`StreamKind`.  Anything else (notably
+#: ``data``) cannot be written to Matroska and must never be mapped.
+_KIND_BY_TYPE = {
+    "video": StreamKind.VIDEO,
+    "audio": StreamKind.AUDIO,
+    "subtitle": StreamKind.SUBTITLE,
+}
 
-    Uses ffprobe when available; falls back to selection length if probing
-    is impossible (so behaviour degrades to "try to map everything" which is
-    what ffmpeg will do anyway).
+#: the only stream kinds a Matroska file can hold
+MUXABLE_KINDS = (StreamKind.VIDEO, StreamKind.AUDIO, StreamKind.SUBTITLE)
+
+
+@dataclass(frozen=True)
+class ProbedStream:
+    """One stream ffprobe actually found in the extracted media."""
+
+    index: int
+    kind: StreamKind
+    codec: str = ""
+
+
+def probe_input_streams(toolchain: Toolchain,
+                        path: str) -> list[ProbedStream] | None:
+    """What the extracted file *really* contains, in ffmpeg stream order.
+
+    A spec-conformant DVD VOB starts every VOBU with a navigation pack
+    (``private_stream_2``), which ffmpeg exposes as a *data* stream - so a
+    real disc's extracted cells carry one more stream than the IFO selection,
+    and it sits at index 0.  Assuming "promised stream i is input i" therefore
+    hands the navigation stream to the Matroska muxer, which refuses anything
+    that is not audio/video/subtitles.  Probing first is the only way to know
+    which index is which.
+
+    Returns ``None`` when probing is impossible (no ffprobe, or it failed) so
+    the caller can degrade to positional mapping instead of refusing to work.
     """
+    ffprobe = toolchain.ffprobe.path if toolchain.ffprobe.available else ""
+    ffprobe = ffprobe or shutil.which("ffprobe") or ""
+    if not ffprobe or not path:
+        return None
     try:
         import json as _json
         from . import subproc
-        ffprobe = shutil.which("ffprobe") or ""
-        path = extracted.paths[0] if extracted.paths else ""
-        if not ffprobe or not path:
-            return len(extracted.streams)
         proc = subproc.run(
             [ffprobe, "-hide_banner", "-loglevel", "error",
-             "-show_entries", "stream=index", "-print_format", "json", path],
+             "-show_entries", "stream=index,codec_type,codec_name",
+             "-print_format", "json", path],
             capture_output=True, text=True, timeout=30, check=False)
         if proc.returncode != 0:
-            return len(extracted.streams)
-        data = _json.loads(proc.stdout or "{}")
-        return len(data.get("streams", [])) or len(extracted.streams)
+            return None
+        raw_streams = _json.loads(proc.stdout or "{}").get("streams", [])
     except Exception:
-        return len(extracted.streams)
+        return None
+    probed: list[ProbedStream] = []
+    for position, raw in enumerate(raw_streams):
+        kind = _KIND_BY_TYPE.get(raw.get("codec_type") or "",
+                                 StreamKind.OTHER)
+        try:
+            index = int(raw.get("index", position))
+        except (TypeError, ValueError):
+            index = position
+        probed.append(ProbedStream(index, kind, raw.get("codec_name") or ""))
+    return probed
+
+
+@dataclass
+class StreamPlan:
+    """How the promised selection lines up with the media that exists."""
+
+    #: (promised stream, actual input index for ``-map 0:<index>``), in order
+    mapped: list[tuple[StreamInfo, int]] = field(default_factory=list)
+    #: promised streams whose kind is nowhere in the extracted media
+    absent: list[StreamInfo] = field(default_factory=list)
+    #: navigation/data/attachment streams that cannot go into an MKV
+    ignored: list[ProbedStream] = field(default_factory=list)
+    #: muxable streams present but not asked for by the selection
+    unpromised: list[ProbedStream] = field(default_factory=list)
+    #: False when ffprobe was unusable and mapping fell back to positions
+    probed: bool = True
+
+
+def plan_stream_maps(promised: list[StreamInfo],
+                     probed: list[ProbedStream] | None) -> StreamPlan:
+    """Match each promised stream to a real stream *of the same kind*.
+
+    Streams are matched per kind in file order, which preserves the selection's
+    meaning (first chosen audio -> first audio in the media) while dropping
+    navigation/data streams entirely.  When ``probed`` is ``None`` the
+    historical positional mapping is kept, flagged via ``probed=False``, so the
+    caller can warn.
+    """
+    if probed is None:
+        return StreamPlan(
+            mapped=[(stream, index) for index, stream in enumerate(promised)],
+            probed=False)
+
+    by_kind: dict[StreamKind, list[ProbedStream]] = {}
+    for stream in probed:
+        by_kind.setdefault(stream.kind, []).append(stream)
+
+    plan = StreamPlan(probed=True)
+    for stream in promised:
+        bucket = by_kind.get(stream.kind) or []
+        if not bucket:
+            plan.absent.append(stream)
+            continue
+        plan.mapped.append((stream, bucket.pop(0).index))
+    for stream in probed:
+        if stream.kind not in MUXABLE_KINDS:
+            plan.ignored.append(stream)
+    for kind, leftover in by_kind.items():
+        if kind in MUXABLE_KINDS:      # non-muxable streams are `ignored`
+            plan.unpromised.extend(leftover)
+    plan.unpromised.sort(key=lambda s: s.index)
+    return plan
 
 
 class FFmpegRemuxer(Remuxer):
@@ -134,30 +226,55 @@ class FFmpegRemuxer(Remuxer):
             # to input index 1 when writing the output file options below.
             args += ["-i", meta_path]
 
-        # Map every stream the extractor promised, in mux order, adjusting
-        # for streams that appear in the IFO but are physically absent from
-        # the extraction (e.g. an empty DVD subtitle track and no packet
-        # ever written).  We probe the actual input stream count once and
-        # only map what exists - and we SAY so in the log; selected streams
-        # are never dropped silently.
+        # Map every stream the extractor promised onto the stream that is
+        # actually there, *by kind* rather than by position.  A real VOB
+        # begins each VOBU with a navigation pack, which ffmpeg presents as a
+        # data stream (usually at index 0); mapping positionally used to feed
+        # it to the Matroska muxer, which rejects anything that is not
+        # audio/video/subtitles and failed the whole job instantly.  Streams
+        # promised by the disc structure but physically absent (e.g. an empty
+        # subtitle track) are still skipped, loudly.
         # Languages travel as per-stream metadata: `-metadata:s:<spec>
         # language=<iso639>`; ffmpeg has no bare `-language` option.
-        present = _input_stream_count(extracted)
-        log.info(f"extracted media carries {present} stream(s); "
-                 f"selection promised {len(extracted.streams)}")
+        probe_path = extracted.paths[0] if extracted.paths else ""
+        probed = (probe_input_streams(self.tc, probe_path)
+                  if probe_path else None)
+        plan = plan_stream_maps(extracted.streams, probed)
+
+        if probed is not None:
+            log.info(
+                f"extracted media carries {len(probed)} stream(s): "
+                f"{len(plan.mapped)} selected, {len(plan.ignored)} "
+                f"navigation/data ignored; selection promised "
+                f"{len(extracted.streams)}")
+            log.debug("probed streams: " + ", ".join(
+                f"[{s.index}] {s.kind.value}/{s.codec or 'unknown'}"
+                for s in probed))
+        else:
+            log.warning(
+                "ffprobe could not inspect the extraction; mapping streams "
+                "positionally, which fails on media that carries navigation "
+                "streams")
+        for stream in plan.ignored:
+            log.info(
+                f"ignoring navigation/data stream [{stream.index}] "
+                f"({stream.codec or 'unknown'}) - not audio, video or "
+                "subtitles, so Matroska cannot hold it")
+        for stream in plan.unpromised:
+            log.info(f"extraction also carries [{stream.index}] "
+                     f"({stream.codec or stream.kind.label}) which the "
+                     "selection did not ask for; leaving it out")
+
         audio_n = sub_n = 0
-        for i, stream in enumerate(extracted.streams):
-            if i >= present:
-                log.warning(
-                    f"stream [{i}] ({stream.summary()}) is declared in the "
-                    f"disc structure but absent from the extracted media; "
-                    f"skipping - nothing was lost that the disc actually "
-                    f"contained")
-                continue
-            args += ["-map", f"0:{i}"]
-            if stream.kind is StreamKind.AUDIO and stream.language:
-                args += ["-metadata:s:a:" + str(audio_n),
-                         f"language={stream.language}"]
+        for stream, input_index in plan.mapped:
+            args += ["-map", f"0:{input_index}"]
+            if stream.kind is StreamKind.AUDIO:
+                # the ordinal counts *mapped* audio tracks, so it stays in
+                # step with ffmpeg's output numbering even when an earlier
+                # track has no language tag
+                if stream.language:
+                    args += ["-metadata:s:a:" + str(audio_n),
+                             f"language={stream.language}"]
                 audio_n += 1
             elif stream.kind is StreamKind.SUBTITLE:
                 if stream.language:
@@ -166,6 +283,28 @@ class FFmpegRemuxer(Remuxer):
                 if stream.forced:
                     args += ["-disposition:s:" + str(sub_n) + " forced"]
                 sub_n += 1
+        for stream in plan.absent:
+            log.warning(
+                f"stream [{stream.index}] ({stream.summary()}) is declared "
+                "in the disc structure but absent from the extracted media; "
+                "skipping - nothing was lost that the disc actually contained")
+
+        if not plan.mapped:
+            if meta_path:
+                try:
+                    os.unlink(meta_path)
+                except OSError:
+                    pass
+            raise RemuxError(
+                "the extraction holds no audio, video or subtitle streams "
+                "to mux",
+                hint=("The selected title produced no muxable media - try "
+                      "another title, or report the disc: "
+                      "docs/TROUBLESHOOTING.md."),
+                detail="probed streams: " + ", ".join(
+                    f"[{s.index}] {s.kind.value}/{s.codec or 'unknown'}"
+                    for s in (probed or [])))
+
         args += [
             "-c", "copy",
             "-map_metadata", "1" if meta_path else "0",
@@ -228,11 +367,9 @@ class FFmpegRemuxer(Remuxer):
         os.replace(temp_path, output_path)
         log.info(f"remuxed {os.path.getsize(output_path)} bytes -> {output_path}")
 
-        # remember exactly what landed in the MKV so the validator checks
-        # against reality rather than the optimistic selection
-        mapped_count = counted_present = present
-        extracted.mapped_streams = [s for s in extracted.streams
-                                    if extracted.streams.index(s) < present]
+        # remember exactly what landed in the MKV (matched promised streams
+        # only) so the validator checks against reality, not the selection
+        extracted.mapped_streams = [stream for stream, _index in plan.mapped]
         return output_path
 
 

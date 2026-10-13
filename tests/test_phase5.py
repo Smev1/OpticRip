@@ -405,3 +405,105 @@ class TestDvdcssDiscovery:
         planted.write_bytes(b"ELF-test")
         found = find_dvdcss(extra_paths=[str(tmp_path)])
         assert found is None or found.endswith(name)
+
+
+# --------------------------------------------------------------------------- #
+# regression: a real VOB starts every VOBU with a DVD navigation pack, which
+# ffmpeg exposes as a *data* stream (usually at index 0). Mapping streams
+# positionally handed that data stream to the Matroska muxer, which rejects
+# it ("Only audio, video, and subtitles are supported for Matroska"), so
+# every title of a real disc rip failed instantly.
+# --------------------------------------------------------------------------- #
+from opticrip.core.interfaces import ExtractionResult          # noqa: E402
+from opticrip.core.models import StreamInfo, StreamKind        # noqa: E402
+from opticrip.rip.ffmpeg import (                              # noqa: E402
+    FFmpegRemuxer,
+    ProbedStream,
+    plan_stream_maps,
+    probe_input_streams,
+)
+
+
+class TestStreamMappingIgnoresNavigationStreams:
+    def _promised(self) -> list[StreamInfo]:
+        return [StreamInfo(0, StreamKind.VIDEO, "mpeg2video"),
+                StreamInfo(1, StreamKind.AUDIO, "ac3", language="eng"),
+                StreamInfo(2, StreamKind.SUBTITLE, "dvd_subtitle",
+                           language="fre")]
+
+    def test_plan_matches_by_kind_and_drops_data(self):
+        """A nav pack at index 0 must not shift the promised streams."""
+        probed = [ProbedStream(0, StreamKind.OTHER, "dvd_nav_packet"),
+                  ProbedStream(1, StreamKind.VIDEO, "mpeg2video"),
+                  ProbedStream(2, StreamKind.AUDIO, "ac3"),
+                  ProbedStream(3, StreamKind.SUBTITLE, "dvd_subtitle")]
+        plan = plan_stream_maps(self._promised(), probed)
+        assert [index for _s, index in plan.mapped] == [1, 2, 3]
+        assert [s.kind for s, _i in plan.mapped] == [
+            StreamKind.VIDEO, StreamKind.AUDIO, StreamKind.SUBTITLE]
+        assert [(s.index, s.codec) for s in plan.ignored] == [
+            (0, "dvd_nav_packet")]
+        assert plan.absent == []
+        # the ignored data stream must not be reported twice
+        assert plan.unpromised == []
+
+    def test_plan_reports_extra_muxable_streams_as_unpromised(self):
+        """A second audio track in the media that was not selected stays out."""
+        probed = [ProbedStream(0, StreamKind.OTHER, "dvd_nav_packet"),
+                  ProbedStream(1, StreamKind.VIDEO, "mpeg2video"),
+                  ProbedStream(2, StreamKind.AUDIO, "ac3"),
+                  ProbedStream(3, StreamKind.AUDIO, "ac3")]
+        plan = plan_stream_maps(self._promised()[:2], probed)
+        assert [index for _s, index in plan.mapped] == [1, 2]
+        assert [(s.index, s.kind) for s in plan.unpromised] == [
+            (3, StreamKind.AUDIO)]
+        assert plan.absent == []
+
+    def test_plan_without_probing_keeps_positional_mapping(self):
+        plan = plan_stream_maps(self._promised(), None)
+        assert [index for _s, index in plan.mapped] == [0, 1, 2]
+        assert plan.probed is False
+
+    def test_plan_warns_about_kinds_absent_from_the_media(self):
+        probed = [ProbedStream(0, StreamKind.OTHER, "dvd_nav_packet"),
+                  ProbedStream(1, StreamKind.VIDEO, "mpeg2video")]
+        plan = plan_stream_maps(self._promised(), probed)
+        assert [index for _s, index in plan.mapped] == [1]
+        assert [s.kind for s in plan.absent] == [StreamKind.AUDIO,
+                                                 StreamKind.SUBTITLE]
+
+    @pytest.mark.requires_ffmpeg
+    def test_remux_of_nav_pack_vob_produces_mkv(self, tmp_path, have_ffmpeg):
+        """End-to-end: the nav-pack VOB must remux to a video+audio MKV."""
+        if not have_ffmpeg:
+            pytest.skip("no ffmpeg available")
+        from tests.synth import DvdFixtureSpec, build_vob
+        from opticrip.rip.tools import Toolchain
+        ps_path = tmp_path / "nav.vob"
+        build_vob(str(ps_path), DvdFixtureSpec(
+            cell_seconds=1.0, cell_count=1, audio_streams=1,
+            subtitle_streams=0, nav_packs=True))
+        tc = Toolchain.detect()
+        probed = probe_input_streams(tc, str(ps_path))
+        assert probed is not None, "ffprobe must be able to inspect the VOB"
+        assert probed[0].kind is StreamKind.OTHER, \
+            "fixture precondition: the nav pack must probe as a data stream"
+
+        ext = ExtractionResult(
+            paths=[str(ps_path)],
+            streams=[StreamInfo(0, StreamKind.VIDEO, "mpeg2video"),
+                     StreamInfo(1, StreamKind.AUDIO, "ac3", language="eng")],
+        )
+        out = tmp_path / "nav.mkv"
+        FFmpegRemuxer(tc).remux(ext, str(out))
+
+        probe = subprocess.run(
+            ["ffprobe", "-hide_banner", "-loglevel", "error", "-show_streams",
+             "-print_format", "json", str(out)],
+            capture_output=True, text=True, timeout=60)
+        assert probe.returncode == 0, probe.stderr[-500:]
+        kinds = [s["codec_type"] for s in json.loads(probe.stdout)["streams"]]
+        assert kinds == ["video", "audio"], kinds
+        # the promises the engine validates against must match reality
+        assert [s.kind for s in ext.mapped_streams] == [StreamKind.VIDEO,
+                                                       StreamKind.AUDIO]

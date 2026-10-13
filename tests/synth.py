@@ -69,6 +69,45 @@ def _insert(buf: bytearray, offset: int, data: bytes) -> None:
     buf[offset:offset + len(data)] = data
 
 
+def nav_pack(pack_header: bytes = b"\x00\x00\x01\xba\x44\x00\x00\x04\x00\x04"
+                                         b"\x01\x00\x00\x03\xf8") -> bytes:
+    """One sector-sized DVD navigation pack (``private_stream_2`` / PCI).
+
+    A real VOB starts every VOBU with one of these. ffmpeg only accepts a
+    ``0x1BF`` packet as DVD navigation data when the PES length is 980 (the
+    PCI structure) or 1018 (DSI); otherwise it silently skips it. The PCI
+    clock fields must also read as a sane BCD time, or ffmpeg treats the
+    stream as Sofdec instead of DVD.
+    """
+    pci = bytearray(980)
+    pci[0x00] = 0                                   # PCI structure tag
+    pci[0x0d:0x11] = (0).to_bytes(4, "big")         # start PTS
+    pci[0x11:0x15] = (1000).to_bytes(4, "big")      # end PTS >= start
+    pci[0x19], pci[0x1a], pci[0x1b] = 0x01, 0x00, 0x00   # BCD 01:00:00
+    pes = b"\x00\x00\x01\xbf" + len(pci).to_bytes(2, "big") + bytes(pci)
+    return pack_header + pes + b"\xff" * (SECTOR - len(pack_header) - len(pes))
+
+
+def splice_nav_packs(path: str, interval: int = 32 * SECTOR) -> None:
+    """Rewrite ``path`` with a nav pack in front of every ``interval`` bytes.
+
+    ``interval`` is a multiple of the 2048-byte sector, so the result stays
+    readable: ffmpeg resyncs on pack headers and, once it has seen a valid
+    PCI, exposes the navigation stream as ``Data: dvd_nav_packet``.
+    """
+    with open(path, "rb") as handle:
+        data = handle.read()
+    if len(data) < 14:
+        return
+    pack_header = data[:14]
+    out = bytearray()
+    for start in range(0, len(data), interval):
+        out += nav_pack(pack_header)
+        out += data[start:start + interval]
+    with open(path, "wb") as handle:
+        handle.write(bytes(out))
+
+
 # --------------------------------------------------------------------------- #
 # DVD-Video
 # --------------------------------------------------------------------------- #
@@ -87,6 +126,11 @@ class DvdFixtureSpec:
     video_fps: float = 25.0
     labels: list[str] = field(default_factory=lambda: ["eng"])
     title_count: int = 1
+    #: splice DVD navigation packs into the VOB (as a real disc does).  ffmpeg
+    #: exposes them as a *data* stream, so this is what makes a fixture
+    #: faithful to a real rip: the extracted media then carries one more
+    #: stream than the IFO selection, at index 0.
+    nav_packs: bool = False
 
     @property
     def duration(self) -> float:
@@ -118,6 +162,8 @@ def build_vob(path: str, spec: DvdFixtureSpec, *, audio_codec: str = "ac3") -> i
     proc = subprocess.run(args, capture_output=True, text=True, check=False)
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg failed building VOB: {proc.stderr[-2000:]}")
+    if spec.nav_packs:
+        splice_nav_packs(path)
     return os.path.getsize(path)
 
 
