@@ -56,7 +56,7 @@ def _value(token: str, title: Title, disc: Disc | None) -> str:
 
 
 def expand(template: str, title: Title, disc: Disc | None = None) -> str:
-    template = template or "{title_t00}"
+    template = template or "{title}"
     result = ""
     for match in TOKEN_RE.finditer(template):
         token = match.group(1)

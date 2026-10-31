@@ -1,313 +1,637 @@
 # OpticRip
 
-A clean-room, cross-platform optical-disc ripper with the same command-line
-surface and robot protocol as MakeMKV, plus a Tk desktop UI. It was built from
-the behavioural evidence in [CLONE_SPEC.md](CLONE_SPEC.md); no vendor code,
-assets or profiles were copied.
+A clean-room, cross-platform optical-disc ripper with a `makemkvcon`-shaped
+command line, a robot (machine-readable) protocol, and a Tk desktop UI.
 
-OpticRip does **not** bundle libdvdcss, libaacs or libbdplus. It can use
-copies that **you** supply: libdvdcss decrypts CSS DVDs, while libaacs and
-libbdplus decrypt and patch AACS/BD+ Blu-rays. The libraries are validated,
-stored under the application data directory, and loaded only when a protected
-disc is saved. Without them, protected discs can still be inspected but saving
-is refused with the reference's "cannot decrypt" message. Raw and decrypted
-whole-disc backups are supported for unencrypted discs and for CSS/AACS/BD+
-discs when the matching library is available.
+OpticRip was built from the behavioural evidence collected in
+[CLONE_SPEC.md](CLONE_SPEC.md). No vendor code, assets or profiles were
+copied, and no decryption keys are included.
+
+> **Status: beta (0.9.0).** The DVD path is the most mature and was checked
+> against a physical disc. Unencrypted Blu-ray and ISO/UDF sources work.
+> Encrypted Blu-ray is implemented but has only been exercised with fake
+> libraries and synthetic media. UHD is detected and deliberately refused.
+> There is no installer, CI pipeline or license yet — see
+> [Where the project stands](#where-the-project-stands).
+
+## Contents
+
+- [What it is](#what-it-is)
+- [Where the project stands](#where-the-project-stands)
+- [Feature support](#feature-support)
+- [Requirements](#requirements)
+- [Install and run](#install-and-run)
+- [Quick start](#quick-start)
+- [CLI reference](#cli-reference)
+- [GUI](#gui)
+- [Configuration](#configuration)
+- [Decryption libraries](#decryption-libraries)
+- [Architecture](#architecture)
+- [Repository layout](#repository-layout)
+- [Testing](#testing)
+- [Verification status](#verification-status)
+- [Known limitations](#known-limitations)
+- [Troubleshooting](#troubleshooting)
+- [Roadmap](#roadmap)
+- [Compatibility and clean-room notes](#compatibility-and-clean-room-notes)
+- [License](#license)
+
+## What it is
+
+OpticRip splits into two processes, like the reference architecture it
+emulates:
+
+* **The engine** (`opticrip.engine`) owns every disc operation: source
+  resolution, drive enumeration, title/stream inspection, selection, saving,
+  whole-disc backup, registration, and the GUI IPC loop.
+* **The front ends** are thin. `opticrip.cli` is the `makemkvcon`-style
+  console; `opticrip.gui` is a Tk window that starts the engine as a child
+  process and talks to it over JSON lines. The GUI never reads a disc itself.
+
+Supported sources are physical drives (`disc:`, `dev:`), folders (`file:`),
+and ISO images (`iso:`). DVD-Video is parsed from IFOs, Blu-ray from MPLS
+playlists, ISO9660 and UDF 2.50 are read directly, and ffmpeg performs the
+final remux into Matroska. Copy protection is delegated to user-supplied
+libdvdcss/libaacs/libbdplus; OpticRip contains no cryptography or keys.
+
+The project is intentionally dependency-free: everything outside the optional
+shared libraries and FFmpeg uses the Python standard library.
+
+## Where the project stands
+
+| Area | State | What that means |
+| --- | --- | --- |
+| DVD-Video inspection | **Working** | IFO title/chapter/stream parsing, PTT fallback for non-sequential titles, structure-protection trimming, minimum-length filtering. Checked against a physical disc; the captured output is in `analysis/evidence/`. |
+| DVD save (VOB → MKV) | **Working** | Cells are staged into one VOB and remuxed with ffmpeg, with chapters and optional captions. Covered by a synthetic end-to-end test when FFmpeg is installed. |
+| CSS DVDs | **Working with user library** | libdvdcss is loaded only for scrambled discs; metadata stays unencrypted and VOB payload is decrypted sector by sector. Verified against the physical test disc. No library is bundled. |
+| DVD closed captions | **Working** | CEA-608 (CC1) is decoded from MPEG-2 user data into a SubRip track. Pop-on, paint-on, roll-up, PAC positioning and the special/extended tables are handled. Synthetic end-to-end test. |
+| Blu-ray inspection | **Working, playlists only** | MPLS playitems and the STN stream table produce titles, streams and segments. CLPI is **not** parsed; stream metadata comes from the playlist. |
+| Blu-ray save | **Working for unencrypted discs** | m2ts clips are concatenated and remuxed. Encrypted clips are staged through libaacs/libbdplus when available. |
+| AACS | **Implemented, not retail-verified** | libaacs does the cryptography. Unit tests use fake libraries and encrypted fixtures; no commercial AACS disc was available. |
+| BD+ | **Implemented, not retail-verified** | libbdplus plus its VM configuration files. Same fake-library test status. |
+| UHD (AACS 2.x) | **Detected, refused** | The MKB type is reported as `AACS 2.x (UHD)` and saving/backup stop with message 9143. This is a designed hard limit, not a TODO. |
+| ISO / UDF sources | **Working** | ISO9660 for DVD/data images, read-only UDF 2.50 (including metadata partitions) for Blu-ray images. Unit tests plus fixtures. |
+| Whole-disc backup | **Working** | Raw or decrypted copy through the same filesystem abstraction; AACS/BD+ metadata is relocated to `MAKEMKV/` so the result opens as an unencrypted disc. A cancelled backup leaves the files copied so far. |
+| GUI | **Working, manually tested** | Source picker, title/stream tree, output folder, progress, cancel for saves/backups, log pane, preferences, registration and backup dialogs. No automated UI tests. |
+| Profiles, selection, naming | **Working** | Four `.mmcp.xml` profiles, the selection-rule language, and the output-name template with collision suffixes. Unit-tested. |
+| Registration and settings | **Working** | `HKCU\Software\OpticRip` on Windows, JSON elsewhere. Unit-tested. |
+| Firmware tool (`f`) | **Partial** | `f list` prints drive slots; other firmware arguments return message 9111 and exit code 2. Flashing is not implemented. |
+| Online metadata | **Not implemented** | Out of scope. Titles without metadata are named `title_tNN.mkv`, matching the reference's behaviour for unknown titles. |
+| Packaging / CI / license | **Missing** | No `pyproject.toml`, installer, GitHub Actions workflow or LICENSE file. Run from a checkout for now. |
+
+In short: DVD ripping is usable today; Blu-ray is usable for unencrypted
+discs and implemented-but-unproven for AACS/BD+; UHD is out of scope by
+design.
+
+## Feature support
+
+### Disc and stream handling
+
+* **DVD-Video** — `VIDEO_TS.IFO` / `VTS_*.IFO` parsing; title and chapter
+  lists; stream attributes; segment maps; structure-protection cell
+  trimming; `TT_SRPT` titles resolved through `VTS_PTT_SRPT` when they are not
+  a single sequential PGC; minimum title length (default 120 s).
+* **Blu-ray** — `PLAYLIST/*.mpls` playitems, `STREAM/*.m2ts` clips, STN
+  codec/PID/language rows, 45 kHz clip timing, playlist marks as chapters.
+  `CLPI` files are not read.
+* **ISO images** — ISO9660 first, UDF 2.50 as a fallback; UDF metadata
+  partitions are supported. Exotic layouts (multi-session, VAT-remapped)
+  may be rejected; mount them or use `file:` instead.
+* **Drives** — 16 `DRV` slots, disc-presence detection and labels. Full drive
+  enumeration and IOCTL queries are Windows-only; on other platforms use
+  `dev:` with a device path, or `file:`/`iso:`.
+* **CSS** — libdvdcss-backed `CssFS` decrypts VOB sectors while ISO9660
+  metadata reads stay clear. On Windows libdvdcss accepts drive letters, not
+  image paths, so CSS ISOs need the physical disc there.
+* **AACS / BD+** — decrypted clips are staged into a temporary folder before
+  ffmpeg sees them; staging reports progress, checks cancellation every
+  6144-byte unit, and removes the staged clips on cancel. Metadata for
+  non-folder sources is materialised into a temporary tree so libaacs and
+  libbdplus can read it.
+
+### Output
+
+* Matroska remux with stream selection, chapters (`ffmetadata`), language and
+  title tags, and an MP4-intermediate retry when the MKV muxer rejects
+  packets.
+* Output-name templates. The default is
+  `{NAME2}{-:CMNT2}{-:DT}{title:+DFLT}{_t:N2}`, which yields `title_t00.mkv`
+  for an unnamed title. Existing files get `_1`, `_2`, … suffixes.
+* Selection strings such as
+  `-sel:all,+sel:(favlang|nolang|single),-sel:(havemulti|havecore),+sel:mvcvideo,=100:all,-10:favlang`
+  with the profile language list. Profiles: `default`, `flac`, `aac-st`,
+  `wdtv`.
+* Decrypted whole-disc backup, with the reference's `MAKEMKV/` relocation of
+  `AACS`/`BDSVM` metadata.
 
 ## Requirements
 
-* Python 3.11 or newer (Tk 8.6+ for the GUI).
-* `ffmpeg` and `ffprobe` on `PATH`. Set `OPTICRIP_FFMPEG` to a binary path or a
-  directory containing both tools to override discovery.
+* **Python 3.11 or newer.** No third-party Python packages.
+* **Tk 8.6+** for the GUI (`python3-tk` on many Linux distributions). The CLI
+  and engine do not need Tk.
+* **FFmpeg** — `ffmpeg` and `ffprobe` are required to save titles and to run
+  the end-to-end tests. Inspection and raw backups do not call them.
+* **Optional decryption libraries** — libdvdcss for CSS, libaacs (+ a
+  KEYDB.cfg entry) for AACS, libbdplus (+ VM files) for BD+. See
+  [Decryption libraries](#decryption-libraries).
+* **Windows** is the primary platform for physical drives. Linux and macOS
+  are supported for folders and ISO images; drive enumeration there is
+  limited to explicit device paths.
 
-There are no third-party Python packages.
+## Install and run
 
-## libdvdcss for CSS DVDs
-
-OpticRip never downloads or ships libdvdcss. Supply your own copy in one of
-three ways:
-
-* **GUI:** *File -> Load libdvdcss library...* (the file picker accepts the
-  Windows DLL, Linux `.so` and macOS `.dylib`). The library is validated and
-  copied to `<data dir>/libdvdcss/`; the path is saved as
-  `app_DvdcssPath`. *Use automatic libdvdcss detection* returns to discovery
-  (it does not delete the staged copy).
-* **By hand:** put `libdvdcss-2.dll` (or the platform equivalent) in
-  `<data dir>/libdvdcss/`, next to `opticrip/`, or anywhere on the system
-  loader's search path. VLC's `libdvdcss-2.dll` directory is also detected on
-  Windows.
-* **Environment:** set `OPTICRIP_DVDCSS` to a full library path for CLI use.
-
-The library is only loaded when a DVD looks CSS-scrambled, so unencrypted
-discs and folders need nothing. On Windows libdvdcss accepts drive letters
-(`D:`), not image paths; CSS-protected `.iso` files therefore need the
-physical disc (an unencrypted `.iso` works normally). On POSIX systems
-libdvdcss can open an image file directly. Opening a CSS disc with older
-libdvdcss builds can pause for about a minute while the title key is
-recovered; title inspection skips VOB reads, so the pause normally happens
-on the first save rather than at open time.
-
-## libaacs and libbdplus for Blu-ray
-
-AACS and BD+ decryption is delegated to the same libraries other open-source
-players use. OpticRip does not implement the cryptography or ship any keys.
-
-* **GUI:** *File -> Load libaacs library...* and *File -> Load libbdplus
-  library...*. The copies are validated and staged in `<data dir>/libaacs/`
-  and `<data dir>/libbdplus/`; the paths are saved as `app_AacsPath` and
-  `app_BdplusPath`. *File -> Load AACS key file (KEYDB.cfg)...* points libaacs
-  at a key database; the file is used where it is and never copied or shown.
-  *Use automatic AACS/BD+ detection* clears all three paths.
-* **By hand:** put `libaacs.dll` / `.so` / `.dylib` and the equivalent
-  libbdplus file in `<data dir>/libaacs/` and `<data dir>/libbdplus/`, next to
-  `opticrip/`, or on the system loader's search path. VLC's directory is also
-  checked on Windows. libaacs also uses its normal `KEYDB.cfg` search path:
-  `%APPDATA%\aacs\KEYDB.cfg` on Windows, `~/.config/aacs/KEYDB.cfg` elsewhere.
-* **Environment:** `OPTICRIP_LIBAACS`, `OPTICRIP_LIBBDPLUS` and
-  `OPTICRIP_AACS_KEYDB` supply library and key-file locations for CLI use
-  when no path is stored in the settings. `OPTICRIP_AACS_KEYDB` is only
-  needed when the key database is not in libaacs' standard location.
-
-AACS needs a key database with an entry for the disc. Without a matching
-volume/unit key, libaacs refuses to open the disc and OpticRip reports the
-reference's "volume key is unknown" message. libaacs can use a `D |` volume
-key directly, or derive it from the media key and volume ID. A drive supplies
-the VID itself; for a folder or ISO image the KEYDB entry needs the disc's
-`V |` volume ID (or a cached VID must exist) when libaacs has to derive the
-key. BD+ always needs the VID and media key too, because libbdplus takes both
-from libaacs. A drive supplies the VID itself and libaacs can derive the media
-key from the MKB when device keys are available; for a folder or ISO image the
-KEYDB entry generally needs `V |` and `M |`. OpticRip reports a clear error
-if libaacs cannot provide them. Both libraries must match the platform
-(64-bit OpticRip needs 64-bit libraries).
-
-BD+ also needs libbdplus 0.2 or newer and its VM configuration files
-(`bdplus/vm0` in the user or system configuration directory). A copy without
-them cannot create the conversion table; OpticRip reports that instead of
-writing corrupt video. On Windows the DLLs' own dependencies (for example
-libgcrypt) must sit beside them or on `PATH`.
-
-The decrypted clips are staged in a temporary folder before ffmpeg remuxes
-them, so a protected Blu-ray save needs free space roughly equal to the title's
-clip size. Staging reports byte progress and owns the first half of the title
-bar; the remux owns the second half. Cancel is checked between 6144-byte units
-and removes the staged clips.
-
-When the source has no local path (for example an ISO image), its AACS/BD+
-metadata is copied to a temporary folder so the libraries can read it; the
-clips themselves stay in the source and are decrypted on the fly. A disc that
-keeps `BDSVM` under `BDMV` (or its AACS folder under `BDMV` / `BDAV`) is
-normalised the same way, because libbdplus only loads `BDSVM/00000.svm` from
-the root it is given. UDF 2.50 Blu-ray images are read directly, including
-images whose directory data lives in a metadata partition.
-
-## Run
+There is no package or installer yet. From a checkout:
 
 ```bash
-python run.py                    # GUI
-python run.py --open disc:0      # GUI, open the first drive immediately
+git clone <this repository> opticrip
+cd opticrip
+python run.py            # GUI
 ```
 
-Headless engine (`makemkvcon`-shaped):
+Or use the engine directly:
 
 ```bash
 python -m opticrip.cli -r info disc:0
-python -m opticrip.cli -r mkv disc:0 0 /output/folder
-python -m opticrip.cli -r backup disc:0 /output/folder
-python -m opticrip.cli -r reg KEY-OR-FILE
 ```
 
-Sources: `disc:<index>`, `dev:<device>`, `file:<folder>`, `iso:<image>`.
-`-r` / `--robot` switches the output from human-readable lines to the
-`DRV:` / `TCOUNT:` / `CINFO:` / `TINFO:` / `SINFO:` / `MSG:` records described in
-the spec. Exit codes: `0` success, `1` usage/key, `10` source, `11` save,
-`127` unknown command.
+`python run.py` starts the GUI with an empty window.
+`python run.py --open file:/path/to/VIDEO_TS` (or `-o`) opens a source after
+startup. The CLI must be run from the repository root (or with the repository
+root on `PYTHONPATH`), because `opticrip` is not installed as a package.
 
-## What works
+## Quick start
 
-* Drive enumeration and disc-presence detection on Windows; folder and
-  ISO9660 sources on every platform.
-* DVD-Video: `VIDEO_TS.IFO` / `VTS_*.IFO` parsing, title and chapter lists,
-  stream attributes, segment maps, structure-protection cell trimming,
-  min-title-length filtering, and VOB-concat remux to Matroska. Titles whose
-  `TT_SRPT` entry is not a single sequential PGC are resolved through
-  `VTS_PTT_SRPT` (this is what makes the verified disc report all 13 titles,
-  including the 4:31 one).
-* CSS decryption through a user-supplied libdvdcss: scrambled VOB payload is
-  read sector-by-sector from the drive while ISO9660 metadata stays
-  unencrypted; title/track selection and remuxing then work as usual.
-* AACS decryption through a user-supplied libaacs, and BD+ patching through a
-  user-supplied libbdplus: the clips a title needs are decrypted into a
-  temporary folder and then remuxed like any unencrypted Blu-ray.
-* Blu-ray: `BDMV` playlist (`MPLS`) and clip (`CLPI`) parsing to titles,
-  streams and segment lists, with `m2ts` concat remux.
-* ISO sources: ISO9660 for DVD/data images and UDF 2.50 for Blu-ray images,
-  with a metadata-partition fallback for discs that keep directory data there.
-* Decrypted whole-disc backup: raw copies keep the original sectors; AACS/BD+
-  and CSS sources are decrypted while copying, and the AACS/BD+ metadata is
-  moved to the reference's `MAKEMKV/` subtree so the result opens as a normal
-  unencrypted disc.
-* DVD closed captions: the MPEG-2 user-data blocks are decoded as CEA-608
-  (CC1) and saved as a SubRip track, so a captioned title gets the reference's
-  `S_CC608/DVD` / `CC→Text` stream. Pop-on, paint-on and roll-up captions,
-  PAC positioning, erase/backspace and the special/extended character tables
-  are handled.
-* Profiles (`opticrip/profiles/*.mmcp.xml`): direct copy, FLAC, AAC stereo and
-  WDTV-style conversion rules, plus the default selection string.
-* Output naming templates (default `{NAME2}{-:CMNT2}{-:DT}{title:+DFLT}{_t:N2}`)
-  with collision-safe `_1`, `_2` suffixes.
-* Settings under `HKCU\Software\OpticRip` (Windows) or
-  `~/.opticrip/settings.json`; `OPTICRIP_REG_ROOT` / `OPTICRIP_DATA_DIR`
-  override the locations for testing.
-* Tk GUI: source picker, title tree with working title and per-track
-  checkboxes, output folder chooser, progress bar, working Cancel button,
-  log pane, preferences, registration and backup dialogs. The GUI never
-  touches a disc itself; it talks to the engine over a JSON-lines protocol
-  and sends the ticked titles/tracks with each save.
+Inspect a DVD folder in robot mode:
 
-## Layout
-
-```
-opticrip/
-  engine.py        disc operations, event stream, save/backup
-  robot.py         robot/human record writers
-  messages.py      message catalogue
-  drives.py        drive information
-  dvd.py           DVD-Video IFO parser
-  bdmv.py          Blu-ray MPLS/CLPI parser
-  iso9660.py       read-only ISO9660
-  udf.py           read-only UDF 2.50 (Blu-ray images)
-  cc.py            DVD CEA-608 closed captions to SubRip
-  backup.py        raw and decrypted whole-disc backup
-  dvdcss.py        optional user-supplied libdvdcss wrapper
-  aacs.py          optional user-supplied libaacs wrapper
-  bdplus.py        optional user-supplied libbdplus wrapper
-  bddecrypt.py     AACS/BD+ Blu-ray clip staging
-  discfs.py        folder/ISO/CSS-disc abstraction
-  profiles.py      .mmcp.xml loader
-  selection.py     selection-rule language
-  naming.py        output-name template
-  settings.py      persistence
-  ffmpeg.py        ffprobe/remux/progress
-  cli.py           makemkvcon-compatible front end
-  gui/             Tk shell and engine subprocess client
-tests/             unit and end-to-end tests
-analysis/          evidence captures and tooling used to write the spec
+```bash
+python -m opticrip.cli -r info file:/media/discs/OVER_THE_HEDGE
 ```
 
-## Tests
+Expected shape:
+
+```text
+MSG:1005,0,1,"OpticRip v0.9.0 win(x64-release) started","%1 started","OpticRip v0.9.0 win(x64-release)"
+MSG:3006,0,1,"Opening files on harddrive at file:///media/discs/OVER_THE_HEDGE","Opening files on harddrive at %1","file:///media/discs/OVER_THE_HEDGE"
+TCOUNT:13
+```
+
+The 13 titles then follow as `TINFO` rows with their `SINFO` streams. (If the
+open fails you get `MSG:5010` and a non-zero exit instead.)
+
+Save title 0:
+
+```bash
+python -m opticrip.cli mkv file:/media/discs/OVER_THE_HEDGE 0 /output
+```
+
+Back up a disc, decrypting when a library is configured:
+
+```bash
+python -m opticrip.cli backup disc:0 /output/backup
+```
+
+## CLI reference
+
+```text
+Use: opticrip [switches] Command [Parameters]
+
+Commands:
+  info <source>                                  print disc information
+  mkv <source> <title id> <destination folder>   save one title
+  backup <source> <destination folder>           back up the whole disc
+  f <args>                                       firmware tool (list only)
+  reg <key string or file name>                  enter a registration key
+```
+
+`guiserver` is also accepted; it starts the JSON-lines loop used by the GUI.
+It is internal, not part of the compatible surface, and may change.
+
+### Sources
+
+| Form | Meaning |
+| --- | --- |
+| `disc:<n>` | Drive slot `n` (0-based, 16 slots) |
+| `dev:<device>` | Drive by OS device name, e.g. `D:` or `/dev/sr0` |
+| `file:<folder>` | A folder containing `VIDEO_TS`, `BDMV` or `BDAV`; a `VIDEO_TS` folder resolves to its parent |
+| `iso:<image>` | An ISO9660 or UDF image |
+| bare path | A directory or `.iso`; the prefix is inferred |
+
+The GUI additionally accepts an `.mkv` file as a source (it probes it with
+ffprobe and shows its tracks). The CLI intentionally does not: passing an
+`.mkv` to `file:` reproduces the reference's exit code 127.
+
+### Switches
+
+| Switch | Effect |
+| --- | --- |
+| `-r`, `--robot` | Emit `MSG`/`DRV`/`TCOUNT`/`CINFO`/`TINFO`/`SINFO` records instead of prose |
+| `-h`, `--help` | Not supported: rejected as an unrecognised option (usage is printed, exit 1) |
+
+Unknown switches print `opticrip: unrecognized option: <x>` and exit 1.
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success |
+| 1 | Usage error, bad key, or unrecognised switch |
+| 2 | Firmware-tool argument error / unsupported firmware operation |
+| 10 | Source could not be opened |
+| 11 | Save failed |
+| 127 | Unknown command, or an unhandled source such as `file:x.mkv` |
+| 130 | Interrupted with Ctrl-C |
+
+### Verified quirks that are reproduced
+
+* `list` is advertised in the usage text but is **not** a command
+  (`Invalid command: list`, exit 127).
+* `file:<file.mkv>` prints message 3006 and exits 127.
+* A folder with no disc files exits 10 without a message.
+* Robot mode suppresses progress records (`PRGV`), matching the reference.
+* The banner always reports `win(x64-release)` regardless of host, because
+  consumers parse its shape.
+
+## GUI
+
+Start with `python run.py`. The window offers:
+
+* opening a drive, folder, ISO or MKV;
+* a title tree with working-title and per-track checkboxes;
+* an output folder chooser and a configurable name template;
+* a progress bar and a Cancel button that works for saves and backups;
+* a log pane fed by engine messages;
+* **File** actions for loading libdvdcss/libaacs/libbdplus, selecting a
+  `KEYDB.cfg`, restoring automatic detection, backup, preferences and
+  registration;
+* saved window geometry and pane positions.
+
+Architecture: the GUI spawns `python -m opticrip.cli guiserver`, sends
+newline-delimited JSON commands (`open`, `drives`, `save`, `save_all`,
+`backup`, `settings`, `register`, `cancel`, `close`, `quit`) and renders
+events (`hello`, `ready`, `opened`, `disc`, `drive`, `message`, `progress`,
+`saved`, `backup_done`, `settings_saved`, `registered`, `cancelling`,
+`closed`, `error`, `stderr`, `engine_exit`, `bye`). Saves and backups run on
+an engine worker thread so Cancel remains responsive.
+
+One caveat: `open` is handled synchronously on the engine's stdin thread, so
+the UI waits for a slow scan and Cancel does not interrupt opening. Saving
+and backup are cancellable.
+
+## Configuration
+
+### Environment variables
+
+| Variable | Purpose |
+| --- | --- |
+| `OPTICRIP_FFMPEG` | Path to an `ffmpeg` binary **or** a folder containing `ffmpeg` and `ffprobe`. Takes precedence over `PATH`. |
+| `OPTICRIP_FFMPEG_DIR` | Folder-only alias for `OPTICRIP_FFMPEG`, kept for existing installs. |
+| `OPTICRIP_DVDCSS` | Full path to libdvdcss, used when no path is stored in settings. |
+| `OPTICRIP_LIBAACS` | Full path to libaacs (CLI use, when settings have no path). |
+| `OPTICRIP_LIBBDPLUS` | Full path to libbdplus. |
+| `OPTICRIP_AACS_KEYDB` | Path to `KEYDB.cfg` when it is not in libaacs' standard location. |
+| `OPTICRIP_DATA_DIR` | Overrides the application data directory (default `~/.opticrip`). |
+| `OPTICRIP_REG_ROOT` | Overrides the Windows registry key (default `Software\OpticRip`). |
+
+### Settings storage
+
+* **Windows:** `HKCU\Software\OpticRip`, values stored as `REG_SZ`.
+* **Other platforms and tests:** `<data dir>/settings.json`.
+* The reference key is deliberately not used, so a real MakeMKV installation
+  is never touched.
+* Unknown values are preserved when settings are rewritten.
+
+Frequently relevant keys (all defined in `opticrip/settings.py`):
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `app_MinTitleLength` | `120` | Skip titles shorter than this many seconds |
+| `app_DefaultSelectionString` | see above | Track selection rules |
+| `app_DefaultOutputFileName` | `{NAME2}{-:CMNT2}{-:DT}{title:+DFLT}{_t:N2}` | Name template |
+| `app_DefaultProfileName` | `default` | Profile used by the CLI |
+| `app_BackupDecrypted` | `1` | Default for the backup dialog |
+| `app_StructureProtection` | `Auto` | Structure-protection handling |
+| `app_DvdcssPath` | `""` | Staged/selected libdvdcss path |
+| `app_AacsPath` | `""` | Staged/selected libaacs path |
+| `app_BdplusPath` | `""` | Staged/selected libbdplus path |
+| `app_AacsKeyFile` | `""` | `KEYDB.cfg` location (used in place, never copied) |
+| `app_DataDir` | `""` | Overrides the data directory |
+
+### Data directory
+
+The default is `~/.opticrip` (`%USERPROFILE%\.opticrip` on Windows), or the
+`OPTICRIP_DATA_DIR` path. User-supplied libraries are validated and staged
+under `libdvdcss/`, `libaacs/` and `libbdplus/`. On Windows a loaded DLL
+cannot be replaced while the process runs, so staged copies are not loaded
+there; the library is used from its original location.
+
+## Decryption libraries
+
+OpticRip ships **no** decryption code, keys, certificates or VM files. It
+loads libraries you provide, and only when a protected disc is saved.
+
+### libdvdcss (CSS DVDs)
+
+Supply a copy in one of these ways:
+
+* **GUI:** *Load libdvdcss library…* validates the file and stages it under
+  `<data dir>/libdvdcss/`. *Use automatic libdvdcss detection* clears the
+  configured path (it does not delete the staged copy).
+* **By hand:** put `libdvdcss-2.dll` (or the platform equivalent) in
+  `<data dir>/libdvdcss/`, next to `opticrip/`, or on the system loader path.
+  VLC's directory is checked on Windows.
+* **Environment:** `OPTICRIP_DVDCSS` for CLI use.
+
+libdvdcss is only loaded when the disc looks scrambled. Opening an old CSS
+disc can pause for around a minute while the title key is recovered; title
+inspection skips VOB reads, so the pause normally happens on first save.
+
+### libaacs (AACS Blu-ray)
+
+* **GUI:** *Load libaacs library…* stages it under `<data dir>/libaacs/`;
+  *Load AACS key file (KEYDB.cfg)…* points libaacs at a key database without
+  copying it.
+* **By hand:** put `libaacs.dll` / `.so` / `.dylib` in `<data dir>/libaacs/`,
+  next to `opticrip/`, or on the loader path. libaacs also searches its
+  normal locations: `%APPDATA%\aacs\KEYDB.cfg` on Windows,
+  `~/.config/aacs/KEYDB.cfg` elsewhere.
+* **Environment:** `OPTICRIP_LIBAACS` and `OPTICRIP_AACS_KEYDB`.
+
+AACS needs a KEYDB entry with a `D |` disc key or enough material (`V |`
+volume ID, `M |` media key) to derive it. A drive supplies the VID; a folder
+or ISO image generally needs `V |` in KEYDB. Both libraries must match the
+interpreter's bitness (64-bit Python needs 64-bit libraries).
+
+### libbdplus (BD+)
+
+BD+ additionally needs libbdplus 0.2 or newer and its VM configuration files
+(`bdplus/vm0`) in the user or system configuration directory. Without them
+the conversion table cannot be built, and OpticRip reports that instead of
+writing corrupt video. On Windows, the DLLs' own dependencies (for example
+libgcrypt) must sit beside them or on `PATH`.
+
+### Legal
+
+Using these libraries may be restricted in your jurisdiction, and you are
+responsible for using them only with discs you are entitled to copy. OpticRip
+does not circumvent anything on its own and does not distribute keys.
+
+## Architecture
+
+```text
+┌──────────────────────┐        JSON lines         ┌───────────────────────────┐
+│ Tk GUI               │ ────────────────────────> │ Engine (subprocess)       │
+│ opticrip/gui/        │ <──────────────────────── │ opticrip.engine           │
+└──────────────────────┘   events + messages       └────────────┬──────────────┘
+                                                                │
+┌──────────────────────┐                                        │
+│ CLI (makemkvcon)     │ ───────────────────────────────────────┤
+│ opticrip/cli.py      │                                        ▼
+└──────────────────────┘                         ┌───────────────────────────┐
+                                                 │ DiscFS                    │
+                                                 │ FolderFS / IsoFS / CssFS  │
+                                                 └────────────┬──────────────┘
+                                                              │
+                       ┌──────────────────────────────────────┼───────────────────────┐
+                       ▼                                      ▼                       ▼
+             ┌──────────────────┐                  ┌────────────────────┐   ┌──────────────────┐
+             │ DVD IFO parser   │                  │ Blu-ray MPLS parser│   │ UDF / ISO9660    │
+             │ opticrip/dvd.py  │                  │ opticrip/bdmv.py   │   │ udf.py/iso9660.py│
+             └────────┬─────────┘                  └─────────┬──────────┘   └──────────────────┘
+                      │                                      │
+                      ▼                                      ▼
+             ┌──────────────────────────────────────────────────────────────┐
+             │ selection → naming → staging → ffmpeg remux / backup writer │
+             │ selection.py  naming.py  cc.py  ffmpeg.py  backup.py         │
+             └──────────────────────────────────────────────────────────────┘
+```
+
+### Modules
+
+| Module | Responsibility |
+| --- | --- |
+| `opticrip/engine.py` | All disc operations, event emission, save/backup orchestration, JSON-lines IPC |
+| `opticrip/model.py` | `Disc`, `Title`, `Stream`, `Segment` data model |
+| `opticrip/messages.py` | Numeric message catalogue and rendering |
+| `opticrip/robot.py` | Robot and human record writers (`MSG`, `DRV`, `CINFO`, `TINFO`, `SINFO`, `TCOUNT`, `PRGV`, `PRGC`, `PRGT`) |
+| `opticrip/drives.py` | Windows drive enumeration, media presence, labels (16 slots) |
+| `opticrip/discfs.py` | `FolderFS`, `IsoFS`, `CssFS` and the shared `DiscFS` protocol |
+| `opticrip/dvd.py` | DVD-Video IFO/PGC parsing, PTT resolution, CSS scrambling detection |
+| `opticrip/bdmv.py` | Blu-ray MPLS playlist/STN parsing (no CLPI) |
+| `opticrip/iso9660.py` | Read-only ISO9660 |
+| `opticrip/udf.py` | Read-only UDF 2.50, including metadata partitions |
+| `opticrip/cc.py` | CEA-608 → SubRip caption decoder |
+| `opticrip/backup.py` | Raw/decrypted whole-disc copy and `MAKEMKV/` relocation |
+| `opticrip/dvdcss.py` | libdvdcss loading, validation, staging, sector reads |
+| `opticrip/aacs.py` | libaacs loading, MKB parsing, VID/key hand-off |
+| `opticrip/bdplus.py` | libbdplus loading, VM setup, conversion-table calls |
+| `opticrip/bddecrypt.py` | AACS/BD+ clip staging and 6144-byte unit fixing |
+| `opticrip/ffmpeg.py` | Tool discovery, probing, remux, progress parsing, cancellation |
+| `opticrip/profiles.py` | `.mmcp.xml` loader and built-in default profile |
+| `opticrip/selection.py` | Selection-rule language |
+| `opticrip/naming.py` | Output-name template expansion and collision handling |
+| `opticrip/settings.py` | Registry/JSON persistence, defaults, data directory |
+| `opticrip/cli.py` | `makemkvcon`-shaped command line and exit codes |
+| `opticrip/gui/app.py` | Tk window, state machine, engine event pump |
+| `opticrip/gui/engine_client.py` | Child-process JSON-lines client |
+| `opticrip/gui/dialogs.py` | Preferences, backup, registration, about, help dialogs |
+| `run.py` | GUI entry point |
+
+### Data flows
+
+**Open/inspect.** `Engine.open_source` parses the source spec, builds a
+`DiscFS`, sniffs the disc kind, parses IFOs or playlists, applies the default
+selection and name template, then emits `CINFO`/`TINFO`/`SINFO` records and
+(optionally) a `TCOUNT`. Opening never decrypts clips.
+
+**Save one title.** `Engine.save_title` resolves the selected streams and
+segments, stages DVD cells into one VOB or Blu-ray clips into decrypted temp
+files when needed, then invokes ffmpeg with a stream map, chapter metadata
+and optional caption SRT. Progress is parsed from ffmpeg's `-progress` output;
+cancellation is checked by the progress callback and between copy units.
+
+**Save all.** `Engine.save_selected` iterates selected titles, applying the
+selection rules and name template, and stops on the first failure or cancel.
+
+**Backup.** `BackupWriter` walks the disc tree, copies files in 8 MiB chunks,
+decrypts VOB/m2ts payload when requested, and writes AACS/BDSVM metadata to
+`MAKEMKV/`. It reports bytes, not ffmpeg progress.
+
+### Protocol details
+
+Robot lines are quoted and escaped, one per line, flushed immediately:
+
+```text
+MSG:<id>,<flags>,<count>,"<rendered>","<template>","<param>"...
+DRV:<index>,<state>,<code>,<visible>,"<drive>","<disc>","<device>"
+TCOUNT:<n>
+CINFO:<attr>,<msgcode>,"<value>"
+TINFO:<title>,<attr>,<msgcode>,"<value>"
+SINFO:<title>,<stream>,<attr>,<msgcode>,"<value>"
+PRGV:<current>,<total>,<max>
+PRGC:<code>,<id>,"<action>"
+PRGT:<code>,<id>,"<operation>"
+```
+
+Message ids observed from the reference live in the normal catalogue range;
+clone-only ids are in the 9xxx range and are documented as `LOCAL` in
+`opticrip/messages.py` so they can never be confused with reference ids.
+`CLONE_SPEC.md` §21 lists the behaviours that could not be verified, and
+§22 lists the acceptance scenarios.
+
+## Repository layout
+
+```text
+.
+├── README.md               this file
+├── CLONE_SPEC.md           behavioural specification (1128 lines)
+├── run.py                  GUI launcher
+├── opticrip/
+│   ├── engine.py           disc operations and IPC
+│   ├── ...                 modules listed above
+│   ├── gui/                Tk front end
+│   └── profiles/           default, flac, aac-st, wdtv
+├── tests/                  21 unittest modules
+└── analysis/               evidence captures and the tooling used for the spec
+```
+
+`analysis/` contains binary captures and research scripts. It is not needed at
+runtime and is not a supported part of the application.
+
+## Testing
 
 ```bash
 python -m unittest discover -s tests
 ```
 
-The suite covers the robot records, message catalogue, robot round-trips,
-naming, selection rules, profiles, registration, settings, DVD/BDMV parsing,
-ISO9660, UDF, DVD caption decoding, the libdvdcss/libaacs/libbdplus wrappers
-and staging, CLI behaviour, the `guiserver` selection/save protocol, and a
-synthetic DVD rip (folder -> IFO -> VOB concat -> MKV -> ffprobe), which
-requires `ffmpeg`. The AACS/BD+ tests use fake libraries and encrypted
-fixtures; they do not need real keys. The caption tests build a real MPEG-2
-VOB, patch DVD caption user data into its picture units, and verify the saved
-MKV has a SubRip track.
+Current result on this machine (Python 3.12.3, no FFmpeg, no optical drive):
 
-## Known limits
+```text
+Ran 184 tests
+OK (skipped=9)
+```
 
-* **Encrypted discs need user-supplied libraries.** CSS needs libdvdcss;
-  AACS needs libaacs plus a KEYDB.cfg with the disc's keys; BD+ additionally
-  needs libbdplus and its VM configuration files. CPPM is unsupported. The
-  libraries are not bundled. A decrypted backup requires the same library as a
-  save: libdvdcss for CSS, libaacs (and libbdplus for BD+) for Blu-ray. CSS
-  `.iso` images cannot be opened through libdvdcss on Windows because its
-  Windows backend only accepts drive letters.
-* **Protected Blu-rays are staged through a temporary copy.** Decrypting with
-  libaacs/libbdplus has to happen before ffmpeg reads a clip, so the title's
-  clips are written decrypted to `<destination>`'s temporary folder first.
-  This doubles peak disk use for the title and adds a copy pass. BD+ runs in
-  the no-menu conversion-table mode; on-disc BD+ application-layer
-  interactions (menus, BD-J) are not emulated, which is normal for ripping.
-* **AACS CPS units are auto-detected.** libaacs is reset per title and picks
-  the CPS unit by validating decrypted TS headers instead of being told the
-  on-disc title number. This handles the usual multi-title discs but costs a
-  little extra work when a disc has several unit keys.
-* **UHD Blu-ray is detected but cannot be decrypted.** The MKB type in
-  `AACS/MKBROM.AACS` identifies AACS 2.0/2.1 (type `0x48141003` /
-  `0x48151003`), and the disc is reported as `AACS 2.x (UHD)`; saving and
-  backup refuse it with a specific message instead of a generic volume-key
-  error. This is a hard limit rather than a missing feature: AACS 2.x uses a
-  separate key tree that libaacs does not implement, bus encryption needs an
-  authenticated, bus-encryption-capable drive, and every UHD disc also needs a
-  licensed host certificate. Implementing it would require the AACS 2.x
-  specification, licensed device keys/certificates and a LibreDrive-style
-  drive; those are not available to this clone. AACS 1.0 and BD+ are the
-  supported Blu-ray cases.
-* **No online metadata.** The reference labels DVD titles with short names
-  (`YB8`, `ZB1`, ...) that come from its title database; those names are not
-  present in the disc's IFOs (verified: no DVD-TEXT table on the test disc)
-  and are not reproduced. Titles without metadata are named `title_tNN.mkv`
-  or by the ID number, exactly as the reference does for unknown titles.
-* **Closed captions are a bounded sample at inspection time.** The reference
-  adds a `S_CC608/DVD` text track per captioned title and converts it to
-  SubRip; OpticRip now does the same. To keep a CSS disc from spinning up for
-  minutes at open time, the CC track is listed only when caption data is found
-  in the first 4 MiB of the title (or when the VOBs are readable at all). A
-  title whose first caption appears later gets no CC row until a save, when the
-  whole stream is decoded. Only CC1/field 1 is decoded (the English caption
-  channel a single S_CC608 track carries); CC2/CC3/CC4, XDS and Text-mode
-  channels are ignored.
-* **One duration delta.** The 83-minute main feature is listed as `1:23:11`
-  instead of the reference's `1:23:02` (9 s). Every other title duration, all
-  sizes, all segment maps (`1`, `1,2`, `1-17`) and all `TINFO` ids match the
-  reference capture. The difference comes from the reference's handling of a
-  trailing cell command in that PGC and does not affect the remux.
-* **UDF images are read-only UDF 2.50.** The parser follows the main volume,
-  partition and (when present) metadata partition. Exotic layouts such as
-  multi-session or VAT-remapped images may still be rejected; mount those or
-  use the `file:` source instead.
-* **`guiserver`** is a clone-local JSON-lines protocol used by the GUI; the
-  reference's binary command socket and HTTP streaming endpoints were UNKNOWN
-  (see §21 of the spec) and are not emulated. `f` implements only `list`;
-  firmware flashing is not attempted.
-* No icons, translations or vendor profiles; the UI uses plain Tk widgets.
+Four tests were added in the current maintenance pass: three for FFmpeg tool
+discovery and one for message rendering.
+
+Nine skips are environmental, not failures:
+
+* eight require `ffmpeg`/`ffprobe` (end-to-end remux, caption muxing,
+  encrypted-clip staging and GUI save protocol);
+* one requires an optical drive.
+
+Install FFmpeg and rerun to exercise the media paths (one drive test will
+still skip). No test requires real CSS/AACS/BD+ keys or retail media.
+
+### What the suite covers
+
+Robot record grammar and quoting, message rendering, CLI behaviour and exit
+codes, settings persistence, registration, naming, selection rules, profile
+loading, DVD IFO parsing, Blu-ray MPLS parsing, ISO9660, UDF, caption
+decoding, libdvdcss/libaacs/libbdplus wrappers with fake libraries and fake
+devices, encrypted-clip staging and cancellation cleanup, backup, the
+`guiserver` protocol, and synthetic end-to-end rips when FFmpeg is present.
+
+Tests are fast and offline. There is no CI configuration, so the suite only
+runs when someone runs it.
 
 ## Verification status
 
-Checked against the physical `OVER_THE_HEDGE` DVD and the captured reference
-output in `analysis/evidence/disc_info.txt`:
+**Verified against a physical disc (recorded in `analysis/evidence/`):**
+13 DVD titles in the captured order, sizes, chapter counts, TINFO ids
+24/25/26/27/30, segment maps, PTT-resolved non-sequential title, stream
+rows, GUI tree and protection label, CSS decryption through libdvdcss, and
+the refusal path when no library is configured.
 
-* 13 titles, `TCOUNT:13`, correct order, sizes, chapter counts and ids.
-* `TINFO 24/25/26/27/30` layout, including segment maps and the PTT-resolved
-  non-sequential title.
-* `SINFO` kind/language/codec/dimensions/aspect/fps/flags/layout/bitrate rows;
-  video reports the reference's constant `9.8 Mb/s` and AC-3 bitrates are read
-  from clear frame headers when the OS permits VOB reads. A CSS disc opened
-  through libdvdcss intentionally skips that VOB read at open time, so its
-  audio bitrate rows are omitted until a future pass can read them lazily.
-* GUI tree, info panes, protection label and 13-title ready state.
-* Synthetic unencrypted DVD rip, including title and per-track selection,
-  chapter metadata and ffprobe validation.
-* Synthetic captioned DVD: the generated VOB carries real DVD CC user data;
-  the engine lists the `S_CC608/DVD` track and the saved MKV contains a
-  SubRip stream with the decoded text.
-* UHD detection: a fake AACS 2.0 MKB is identified as `AACS 2.0 (UHD)` and the
-  save/backup paths refuse it with message 9143 before touching a library.
-* Unit tests for the libdvdcss wrapper use a fake decrypting device and a
-  fake ISO9660 image; they verify sector-aligned reads, per-VOB decryption,
-  metadata reads that stay undecrypted, library validation and staging.
+**Covered by synthetic/unit tests:** unencrypted DVD rip end to end (when
+FFmpeg is installed), captioned DVD with a real SubRip track in the output
+MKV, AACS/BD+ staging with fake libraries, UHD refusal (message 9143),
+ISO9660/UDF fixtures, and the full GUI save protocol.
 
-The encrypted disc is correctly refused for saving when no libdvdcss is
-configured; its IFOs remain readable, which is why inspection works. With a
-user-supplied library the VOB payload is decrypted and saving follows the same
-remux path as an unencrypted disc.
+**Not verified:** retail AACS and BD+ discs, real libaacs/libbdplus builds,
+macOS, BD drive enumeration on non-Windows hosts, automated GUI interaction,
+and UHD (unsupported by design). The verification claims above describe
+captured evidence; they were not re-run in this environment.
 
-AACS/BD+ support is covered by tests with fake libaacs/libbdplus handles: they
-verify 6144-byte unit decryption and fixing, VID/media-key hand-off, BD+
-conversion-table/stream calls, metadata materialisation from non-folder
-sources, staging progress, cancellation cleanup, and the engine's refusal and
-success paths. One end-to-end test generates a short MPEG-TS, "encrypts" it,
-stages it through the real engine, remuxes it with ffmpeg and probes the
-resulting MKV, so the staging -> remux hand-off is exercised too. No real AACS
-or BD+ disc and no real libaacs/libbdplus build was available on the
-development machine, so those paths are logically verified but not yet
-exercised against retail media. CSS behaviour was verified against the
-physical test disc described above.
+## Known limitations
+
+* **Encryption needs user-supplied libraries.** CSS needs libdvdcss; AACS
+  needs libaacs plus a matching KEYDB entry; BD+ additionally needs libbdplus
+  and its VM files. CPPM is unsupported. No keys or libraries are bundled.
+* **UHD cannot be decrypted.** AACS 2.x needs a different key tree, bus
+  encryption and a licensed host certificate. OpticRip detects it and refuses
+  with a specific message rather than a generic failure.
+* **Protected Blu-rays are staged.** Decryption happens before ffmpeg reads a
+  clip, so peak disk use is roughly the title's clip size plus the output.
+* **No CLPI parsing.** Blu-ray stream metadata comes from the MPLS STN table.
+  This is sufficient for the tested discs but is not a full clip-info reader.
+* **Captions are sampled at inspection time.** The `S_CC608/DVD` track is
+  listed only if caption data appears in the first 4 MiB of the title (or the
+  VOBs are readable). A caption that starts later appears only after a save,
+  which decodes the whole stream. CC1/field 1 only; CC2–4, XDS and Text mode
+  are ignored.
+* **One DVD duration delta.** The 83-minute main feature reports `1:23:11`
+  where the reference reports `1:23:02` (9 s), due to trailing-cell command
+  handling. All other durations, sizes, maps and ids in the capture match.
+* **A cancelled backup keeps partial output.** Files copied before the cancel
+  remain in the destination; deleting them automatically could destroy
+  pre-existing files, so removal is left to the user.
+* **Opening is not cancellable.** `open` runs on the engine's stdin thread;
+  Cancel applies to saves and backups.
+* **No online metadata.** Title names come from the disc; unknown titles use
+  `title_tNN` naming. There is no title database.
+* **`guiserver` is private.** The reference's binary socket and HTTP
+  streaming endpoints were UNKNOWN, so the JSON-lines protocol is
+  clone-local and may change.
+* **`f` is incomplete.** Only `f list` is implemented; firmware flashing is
+  not attempted.
+* **No installer, CI or license.** The project runs from a checkout.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| `ffmpeg was not found` | FFmpeg missing or not on `PATH` | Install FFmpeg, or set `OPTICRIP_FFMPEG` to the binary or its folder |
+| `This disc uses CSS protection…` and no save | No libdvdcss configured | Load libdvdcss in the GUI, stage it under `<data dir>/libdvdcss/`, or set `OPTICRIP_DVDCSS` |
+| `volume key is unknown` | KEYDB has no entry for the disc | Add the disc's `D |` key or `V |`/`M |` material to `KEYDB.cfg`; check the key file path |
+| BD+ fails before any output | libbdplus too old or `bdplus/vm0` missing | Install libbdplus 0.2+ and its VM configuration files |
+| CSS ISO opens on Linux but not Windows | libdvdcss' Windows backend accepts drive letters only | Rip from the physical drive on Windows |
+| GUI does not start | Tk missing | Install Tk (`python3-tk`); the CLI still works |
+| `disc:0` shows nothing on Linux/macOS | Drive enumeration is Windows-only | Use `dev:/dev/sr0` or `file:`/`iso:` |
+| Save fails at the mux step on Blu-ray | ffmpeg rejected the packet stream | Check the log; the remux falls back through an MP4 intermediate only when no subtitles are selected |
+| GUI Cancel does nothing while opening | Opening is synchronous | Wait for the scan to finish; Cancel works for saves/backups |
+
+## Roadmap
+
+Ordered by value, not promise:
+
+1. **Validate AACS/BD+ against retail media** with a real drive and real
+   libraries; record evidence like the DVD capture.
+2. **Add CI** (GitHub Actions) running the suite with FFmpeg installed, plus
+   a lint/type pass.
+3. **Package the project** (`pyproject.toml`, console entry points) so
+   `opticrip` works without a checkout.
+4. **Add GUI tests** or at least a headless smoke test for the engine event
+   pump and settings flow.
+5. **Make opening cancellable** by moving `open` to the worker thread with a
+   generation token.
+6. **Clean partial backups on cancel**, tracking only files created by the
+   current run.
+7. **Parse CLPI** if a disc shows stream metadata that MPLS does not carry.
+8. **Repository hygiene:** add `.gitignore`, stop tracking `__pycache__` and
+   generated fixtures, normalise line endings, choose a license.
+
+## Compatibility and clean-room notes
+
+OpticRip is not affiliated with, endorsed by, or derived from MakeMKV source
+code. The CLI surface, message ids, robot grammar and observed quirks come
+from black-box captures documented in `CLONE_SPEC.md`; each requirement there
+is tagged VERIFIED, INFERRED or UNKNOWN. Where behaviour could not be
+observed, this README and the spec say so instead of guessing.
+
+The compatible surface is the CLI and its robot output. The Tk UI, the
+`guiserver` protocol and the `9xxx` message ids are clone-local.
+
+## License
+
+No license has been chosen yet. Add one before distributing the project or
+accepting contributions; until then, default copyright applies.

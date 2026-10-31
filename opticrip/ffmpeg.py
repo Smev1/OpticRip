@@ -12,7 +12,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
@@ -36,25 +35,44 @@ class FFmpegError(Exception):
 
 
 def tool(name: str) -> str:
+    """Resolve ``ffmpeg`` or ``ffprobe``.
+
+    ``OPTICRIP_FFMPEG`` (binary path or folder) wins over ``PATH``, which
+    wins over the bundled ``tools/`` folder.  ``OPTICRIP_FFMPEG_DIR`` is kept
+    as a folder-only alias for existing installations.
+    """
     if name in _CACHE:
         return _CACHE[name]
     candidates: list[str] = []
-    env_dir = os.environ.get("OPTICRIP_FFMPEG_DIR")
+    env_dir = os.environ.get("OPTICRIP_FFMPEG_DIR", "").strip()
     if env_dir:
         candidates.append(str(Path(env_dir) / (name + ".exe")))
         candidates.append(str(Path(env_dir) / name))
+    override = os.environ.get("OPTICRIP_FFMPEG", "").strip()
+    if override:
+        path = Path(override)
+        if path.is_dir():
+            candidates.append(str(path / (name + ".exe")))
+            candidates.append(str(path / name))
+        elif path.is_file():
+            if path.stem.lower() == name.lower():
+                candidates.append(str(path))
+            else:
+                # The override names the other tool; look beside it.
+                candidates.append(str(path.with_name(name + path.suffix)))
     found = shutil.which(name)
     if found:
-        candidates.insert(0, found)
-    candidates.extend([
-        str(Path(__file__).resolve().parent.parent / "tools" / (name + ".exe")),
-    ])
+        candidates.append(found)
+    candidates.append(
+        str(Path(__file__).resolve().parent.parent / "tools" / (name + ".exe"))
+    )
     for candidate in candidates:
         if candidate and Path(candidate).is_file():
             _CACHE[name] = candidate
             return candidate
     raise FFmpegError(
-        f"{name} was not found. Install FFmpeg or set OPTICRIP_FFMPEG_DIR."
+        f"{name} was not found. Install FFmpeg or set OPTICRIP_FFMPEG to an "
+        "ffmpeg binary or a folder containing ffmpeg and ffprobe."
     )
 
 

@@ -878,7 +878,8 @@ class MainWindow:
         )
         self._reopen_after_setting()
 
-    def _apply_settings(self, values: dict[str, str]) -> bool:
+    def _apply_settings(self, values: dict[str, object]) -> bool:
+        """Persist settings, forward them to the engine and report failure."""
         for key, value in values.items():
             self.settings.set(key, value)
         try:
@@ -989,11 +990,13 @@ class MainWindow:
                          decrypt=decrypt)
 
     def preferences(self) -> None:
-        dialog = PreferencesDialog(self.root, self.settings, on_apply=self._apply_settings)
+        dialog = PreferencesDialog(self.root, self.settings,
+                                   on_apply=self._apply_preferences)
         dialog.show()
 
-    def _apply_settings(self, values: dict) -> None:
-        self.client.send(cmd="settings", values=values)
+    def _apply_preferences(self, values: dict) -> None:
+        if not self._apply_settings(values):
+            return
         self.output_dir = str(self.settings.output_dir)
         self.output_var.set(self.output_dir)
         self.log_line("Some settings will apply next time you start the application.")

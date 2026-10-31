@@ -10,6 +10,7 @@ confused with reference ids.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 # UiMsg flags (documented constants, confirmed for 128/260/131072/16777216).
@@ -143,17 +144,24 @@ def flags(ident: int) -> int:
     return definition(ident).flags
 
 
+_PLACEHOLDER = re.compile(r"%([1-9])")
+
+
 def render(ident: int, *params: object) -> str:
     """Render a template.
 
     Only positional ``%1``..``%9`` placeholders exist in the reference
     catalogue.  Rendering is textual, so callers may pass ints, floats or
-    strings; ``%1`` in a value is *not* re-expanded.
+    strings; a placeholder inside a value is *not* re-expanded because the
+    template is scanned once and values are inserted verbatim.
     """
-    text = definition(ident).template
-    for index, value in enumerate(params, start=1):
-        text = text.replace(f"%{index}", str(value))
-    return text
+    def substitute(match: re.Match[str]) -> str:
+        index = int(match.group(1))
+        if index > len(params):
+            return match.group(0)
+        return str(params[index - 1])
+
+    return _PLACEHOLDER.sub(substitute, definition(ident).template)
 
 
 def has_placeholders(text: str) -> bool:

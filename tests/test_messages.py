@@ -15,6 +15,11 @@ class MessageTests(unittest.TestCase):
         text = messages.render(3028, 2, 1, "0:03:43")
         self.assertFalse(messages.has_placeholders(text))
 
+    def test_parameter_values_are_not_re_expanded(self):
+        text = messages.render(3028, "%2", 1, "0:03:43")
+        self.assertIn("%2", text)
+        self.assertIn("0:03:43", text)
+
     def test_unknown_id_is_safe(self):
         text = messages.render(999999)
         self.assertIn("unknown message", text)
