@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpticRip</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark">OR</span>
+      <span class="name">OpticRip</span>
+      <span class="badge" id="version">beta</span>
+    </div>
+    <div class="status" id="status">connecting…</div>
+  </header>
+
+  <main class="layout">
+    <section class="panel source-panel">
+      <h2>Source</h2>
+      <p class="meta">Open a drive, a disc folder, or an ISO image.</p>
+      <form id="open-form" class="stack">
+        <label class="field">
+          <span>Source specification</span>
+          <input id="source" type="text" spellcheck="false" autocomplete="off"
+                 placeholder="disc:0">
+        </label>
+        <button id="open-btn" type="submit">Open source</button>
+      </form>
+      <p class="hint">Examples: <code>disc:0</code>, <code>dev:/dev/sr0</code>,
+        <code>file:/media/DVD</code>, <code>iso:/media/disc.iso</code></p>
+      <div class="row">
+        <button id="drives-btn" class="secondary" type="button">Scan drives</button>
+        <button id="close-btn" class="ghost" type="button" disabled>Close source</button>
+      </div>
+      <ul id="drives" class="drives"></ul>
+
+      <details class="backup">
+        <summary>Whole-disc backup</summary>
+        <p class="meta">Backup works with drive sources only (<code>disc:</code>).
+          The destination is the output folder on the right.</p>
+        <label class="field">
+          <span>Drive source</span>
+          <input id="backup-spec" type="text" spellcheck="false"
+                 placeholder="disc:0">
+        </label>
+        <label class="check">
+          <input id="backup-decrypt" type="checkbox" checked>
+          <span>Decrypt while copying (needs libdvdcss / libaacs / libbdplus)</span>
+        </label>
+        <button id="backup-btn" class="secondary" type="button">Start backup</button>
+      </details>
+    </section>
+
+    <section class="panel disc-panel">
+      <div id="empty" class="empty">
+        <div class="empty-mark">◎</div>
+        <h2>No disc open</h2>
+        <p class="meta">Choose a source on the left to inspect its titles.</p>
+      </div>
+
+      <div id="disc-view" hidden>
+        <div class="disc-head">
+          <div>
+            <h2 id="disc-label">Disc</h2>
+            <p id="disc-meta" class="meta"></p>
+          </div>
+          <div class="row compact">
+            <span id="title-count" class="pill"></span>
+          </div>
+        </div>
+        <div class="row toolbar">
+          <button id="select-all" class="ghost small" type="button">Select all</button>
+          <button id="select-none" class="ghost small" type="button">Select none</button>
+        </div>
+        <ul id="titles" class="titles"></ul>
+      </div>
+    </section>
+
+    <aside class="panel action-panel">
+      <h2>Output</h2>
+      <label class="field">
+        <span>Destination folder</span>
+        <input id="dest" type="text" spellcheck="false" placeholder="/output">
+      </label>
+      <div class="row">
+        <button id="save-btn" type="button" disabled>Save selected</button>
+        <button id="cancel-btn" class="danger" type="button" disabled>Cancel</button>
+      </div>
+
+      <div class="progress" aria-hidden="true">
+        <div id="progress-bar"></div>
+      </div>
+      <p id="progress-text" class="meta progress-text">idle</p>
+      <p id="last" class="last" role="status"></p>
+
+      <h2 class="log-title">Log</h2>
+      <ol id="log" class="log"></ol>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <span>Local tool — no authentication. Do not expose this port to the internet.</span>
+    <span>OpticRip does not include decryption keys or libraries.</span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

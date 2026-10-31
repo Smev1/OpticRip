@@ -1,0 +1,20 @@
+services:
+  opticrip:
+    build: .
+    image: opticrip:dev
+    init: true
+    ports:
+      - "8080:8080"
+    environment:
+      OPTICRIP_DATA_DIR: /config
+    volumes:
+      - ./data:/config
+      - ./media:/media:ro
+      - ./output:/output
+    # For a physical drive, pass the device and its group.  The group id
+    # differs per host: stat -c '%g' /dev/sr0
+    # devices:
+    #   - /dev/sr0:/dev/sr0
+    # group_add:
+    #   - "44"
+    restart: unless-stopped

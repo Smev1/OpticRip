@@ -1,0 +1,14 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+tests
+analysis
+.tmp-udf
+.cloud-attachments
+data
+output
+media
+artifacts
+*.log

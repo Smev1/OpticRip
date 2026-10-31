@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.run/
+data/
+output/
+media/
+artifacts/
+*.log

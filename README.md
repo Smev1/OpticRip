@@ -1,7 +1,8 @@
 # OpticRip
 
 A clean-room, cross-platform optical-disc ripper with a `makemkvcon`-shaped
-command line, a robot (machine-readable) protocol, and a Tk desktop UI.
+command line, a robot (machine-readable) protocol, a Tk desktop UI, and a
+dependency-free browser UI that runs locally or in Docker.
 
 OpticRip was built from the behavioural evidence collected in
 [CLONE_SPEC.md](CLONE_SPEC.md). No vendor code, assets or profiles were
@@ -24,6 +25,7 @@ copied, and no decryption keys are included.
 - [Quick start](#quick-start)
 - [CLI reference](#cli-reference)
 - [GUI](#gui)
+- [Web UI and Docker](#web-ui-and-docker)
 - [Configuration](#configuration)
 - [Decryption libraries](#decryption-libraries)
 - [Architecture](#architecture)
@@ -38,15 +40,16 @@ copied, and no decryption keys are included.
 
 ## What it is
 
-OpticRip splits into two processes, like the reference architecture it
-emulates:
+OpticRip splits into a headless engine and thin front ends:
 
 * **The engine** (`opticrip.engine`) owns every disc operation: source
   resolution, drive enumeration, title/stream inspection, selection, saving,
   whole-disc backup, registration, and the GUI IPC loop.
 * **The front ends** are thin. `opticrip.cli` is the `makemkvcon`-style
   console; `opticrip.gui` is a Tk window that starts the engine as a child
-  process and talks to it over JSON lines. The GUI never reads a disc itself.
+  process and talks to it over JSON lines. `opticrip.web` embeds the same
+  engine in a small HTTP server for the browser UI. No front end reads a
+  disc itself.
 
 Supported sources are physical drives (`disc:`, `dev:`), folders (`file:`),
 and ISO images (`iso:`). DVD-Video is parsed from IFOs, Blu-ray from MPLS
@@ -72,7 +75,8 @@ shared libraries and FFmpeg uses the Python standard library.
 | UHD (AACS 2.x) | **Detected, refused** | The MKB type is reported as `AACS 2.x (UHD)` and saving/backup stop with message 9143. This is a designed hard limit, not a TODO. |
 | ISO / UDF sources | **Working** | ISO9660 for DVD/data images, read-only UDF 2.50 (including metadata partitions) for Blu-ray images. Unit tests plus fixtures. |
 | Whole-disc backup | **Working** | Raw or decrypted copy through the same filesystem abstraction; AACS/BD+ metadata is relocated to `MAKEMKV/` so the result opens as an unencrypted disc. A cancelled backup leaves the files copied so far. |
-| GUI | **Working, manually tested** | Source picker, title/stream tree, output folder, progress, cancel for saves/backups, log pane, preferences, registration and backup dialogs. No automated UI tests. |
+| Tk GUI | **Working, manually tested** | Source picker, title/stream tree, output folder, progress, cancel for saves/backups, log pane, preferences, registration and backup dialogs. No automated UI tests. |
+| Web UI / Docker | **Working, HTTP-tested** | Stdlib-only browser front end over the same engine with title/stream selection, save, backup, cancel, progress and log. Dockerfile and compose recipe install FFmpeg and run non-root. The image build is not covered by CI yet, and the UI has no authentication. |
 | Profiles, selection, naming | **Working** | Four `.mmcp.xml` profiles, the selection-rule language, and the output-name template with collision suffixes. Unit-tested. |
 | Registration and settings | **Working** | `HKCU\Software\OpticRip` on Windows, JSON elsewhere. Unit-tested. |
 | Firmware tool (`f`) | **Partial** | `f list` prints drive slots; other firmware arguments return message 9111 and exit code 2. Flashing is not implemented. |
@@ -127,8 +131,10 @@ design.
 ## Requirements
 
 * **Python 3.11 or newer.** No third-party Python packages.
-* **Tk 8.6+** for the GUI (`python3-tk` on many Linux distributions). The CLI
-  and engine do not need Tk.
+* **Tk 8.6+** for the GUI (`python3-tk` on many Linux distributions). The CLI,
+  engine and browser UI do not need Tk.
+* **Docker (optional)** for the container recipe. The image installs FFmpeg
+  and needs no Python packages beyond the standard library.
 * **FFmpeg** — `ffmpeg` and `ffprobe` are required to save titles and to run
   the end-to-end tests. Inspection and raw backups do not call them.
 * **Optional decryption libraries** — libdvdcss for CSS, libaacs (+ a
@@ -276,6 +282,86 @@ an engine worker thread so Cancel remains responsive.
 One caveat: `open` is handled synchronously on the engine's stdin thread, so
 the UI waits for a slow scan and Cancel does not interrupt opening. Saving
 and backup are cancellable.
+
+## Web UI and Docker
+
+The browser front end wraps the same engine in a small standard-library HTTP
+server. It supports opening a source, title and track selection, saving the
+selected titles, cancelling a save or backup, whole-disc backup, progress
+and the engine log. It is single-user and deliberately has no
+authentication.
+
+```bash
+python -m opticrip.web --host 127.0.0.1 --port 8080
+```
+
+Open `http://127.0.0.1:8080`. `--data-dir` overrides the settings directory
+for that process; otherwise `OPTICRIP_DATA_DIR` or `~/.opticrip` applies.
+
+### HTTP API
+
+The API is clone-local and is not part of the `makemkvcon`-compatible
+surface. Jobs are asynchronous: a POST returns `202` and the client polls
+`/api/state`; a second job returns `409`.
+
+| Method | Path | Body / purpose |
+| --- | --- | --- |
+| GET | `/api/health` | liveness and version |
+| GET | `/api/state` | disc, job, progress, log, drives, output directory |
+| POST | `/api/open` | `{"spec": "disc:0"}` |
+| POST | `/api/save` | `{"title": 0, "dest": "/out", "streams": {"0": [1]}}` |
+| POST | `/api/save_all` | `{"titles": [0], "dest": "/out", "streams": {"0": [1]}}` |
+| POST | `/api/backup` | `{"spec": "disc:0", "dest": "/backup", "decrypt": true}` |
+| POST | `/api/cancel` | request cancellation of the running save/backup |
+| POST | `/api/close` | close the current source |
+| POST | `/api/drives` | rescan drive slots |
+
+A `file:` or `iso:` source is enough for inspection, saving and MKV export.
+Backup still requires a drive source (`disc:`), matching the engine and the
+reference. Web requests are same-origin checked, and static files are served
+from a fixed allow-list.
+
+### Docker
+
+```bash
+docker build -t opticrip .
+docker run --rm -p 8080:8080 \
+  -v "$PWD/data:/config" \
+  -v "$PWD/media:/media:ro" \
+  opticrip
+```
+
+Or use the included recipe:
+
+```bash
+docker compose up --build
+```
+
+`/config` holds settings and the default output directory
+(`/config/output`). Mount a media folder read-only and enter its container
+path in the UI. The container runs as UID 1000; make sure mounted output is
+writable by that user.
+
+For a physical drive, pass the device and its group (the group id differs
+per host):
+
+```bash
+docker run --rm -p 8080:8080 \
+  --device=/dev/sr0 \
+  --group-add "$(stat -c '%g' /dev/sr0)" \
+  -v "$PWD/data:/config" \
+  opticrip
+```
+
+Use `dev:/dev/sr0`, not `disc:0`, inside a Linux container: drive enumeration
+is Windows-only, so `disc:` slots are empty there. Decryption libraries are
+not bundled. Mount them and pass `OPTICRIP_DVDCSS`, `OPTICRIP_LIBAACS`,
+`OPTICRIP_LIBBDPLUS` and `OPTICRIP_AACS_KEYDB` as needed; the Tk preferences
+dialog for loading libraries is not exposed in the browser UI.
+
+**Do not publish the port to the internet.** There is no login, and the API
+can read mounted media and write to mounted output. The Dockerfile and
+compose file are provided, but the image build is not yet exercised in CI.
 
 ## Configuration
 
@@ -434,6 +520,8 @@ does not circumvent anything on its own and does not distribute keys.
 | `opticrip/gui/app.py` | Tk window, state machine, engine event pump |
 | `opticrip/gui/engine_client.py` | Child-process JSON-lines client |
 | `opticrip/gui/dialogs.py` | Preferences, backup, registration, about, help dialogs |
+| `opticrip/web/server.py` | HTTP server, JSON API, single-job state, static assets |
+| `opticrip/web/static/` | Browser UI (HTML, CSS, vanilla JavaScript) |
 | `run.py` | GUI entry point |
 
 ### Data flows
@@ -485,12 +573,16 @@ clone-only ids are in the 9xxx range and are documented as `LOCAL` in
 ├── README.md               this file
 ├── CLONE_SPEC.md           behavioural specification (1128 lines)
 ├── run.py                  GUI launcher
+├── Dockerfile              web UI container (FFmpeg installed)
+├── docker-compose.yml      config/media/output volumes
+├── .dockerignore
 ├── opticrip/
 │   ├── engine.py           disc operations and IPC
 │   ├── ...                 modules listed above
 │   ├── gui/                Tk front end
+│   ├── web/                browser front end and static assets
 │   └── profiles/           default, flac, aac-st, wdtv
-├── tests/                  21 unittest modules
+├── tests/                  22 unittest modules
 └── analysis/               evidence captures and the tooling used for the spec
 ```
 
@@ -506,12 +598,13 @@ python -m unittest discover -s tests
 Current result on this machine (Python 3.12.3, no FFmpeg, no optical drive):
 
 ```text
-Ran 184 tests
+Ran 192 tests
 OK (skipped=9)
 ```
 
-Four tests were added in the current maintenance pass: three for FFmpeg tool
-discovery and one for message rendering.
+The current suite includes four regression tests from the maintenance pass
+(three for FFmpeg tool discovery, one for message rendering) and eight
+HTTP-level tests for the web UI.
 
 Nine skips are environmental, not failures:
 
@@ -529,7 +622,9 @@ codes, settings persistence, registration, naming, selection rules, profile
 loading, DVD IFO parsing, Blu-ray MPLS parsing, ISO9660, UDF, caption
 decoding, libdvdcss/libaacs/libbdplus wrappers with fake libraries and fake
 devices, encrypted-clip staging and cancellation cleanup, backup, the
-`guiserver` protocol, and synthetic end-to-end rips when FFmpeg is present.
+`guiserver` protocol, the web API (health, state, open failure, validation,
+cross-origin refusal and drive scans), and synthetic end-to-end rips when
+FFmpeg is present.
 
 Tests are fast and offline. There is no CI configuration, so the suite only
 runs when someone runs it.
@@ -545,12 +640,13 @@ the refusal path when no library is configured.
 **Covered by synthetic/unit tests:** unencrypted DVD rip end to end (when
 FFmpeg is installed), captioned DVD with a real SubRip track in the output
 MKV, AACS/BD+ staging with fake libraries, UHD refusal (message 9143),
-ISO9660/UDF fixtures, and the full GUI save protocol.
+ISO9660/UDF fixtures, the full GUI save protocol, and the web API.
 
 **Not verified:** retail AACS and BD+ discs, real libaacs/libbdplus builds,
 macOS, BD drive enumeration on non-Windows hosts, automated GUI interaction,
-and UHD (unsupported by design). The verification claims above describe
-captured evidence; they were not re-run in this environment.
+a Docker image build, and UHD (unsupported by design). The verification
+claims above describe captured evidence; they were not re-run in this
+environment.
 
 ## Known limitations
 
@@ -584,7 +680,13 @@ captured evidence; they were not re-run in this environment.
   clone-local and may change.
 * **`f` is incomplete.** Only `f list` is implemented; firmware flashing is
   not attempted.
-* **No installer, CI or license.** The project runs from a checkout.
+* **The web UI is unauthenticated and single-job.** Bind it to `localhost` or
+  a trusted network, never the public internet. Library selection,
+  registration and preferences remain CLI/Tk-only; in a container, pass the
+  library paths through environment variables.
+* **The container is a recipe, not a tested release.** CI does not build the
+  image yet, and there is no published image.
+* **No installer or CI.** The project runs from a checkout.
 
 ## Troubleshooting
 
@@ -598,7 +700,10 @@ captured evidence; they were not re-run in this environment.
 | GUI does not start | Tk missing | Install Tk (`python3-tk`); the CLI still works |
 | `disc:0` shows nothing on Linux/macOS | Drive enumeration is Windows-only | Use `dev:/dev/sr0` or `file:`/`iso:` |
 | Save fails at the mux step on Blu-ray | ffmpeg rejected the packet stream | Check the log; the remux falls back through an MP4 intermediate only when no subtitles are selected |
-| GUI Cancel does nothing while opening | Opening is synchronous | Wait for the scan to finish; Cancel works for saves/backups |
+| GUI/web Cancel does nothing while opening | Opening is synchronous | Wait for the scan to finish; Cancel works for saves/backups |
+| Web UI says `offline` | Server stopped, wrong port, or blocked | Start `python -m opticrip.web`, check the port, and reload |
+| `disc:0` is empty in Docker | Drive enumeration is Windows-only | Use `dev:/dev/sr0` with `--device` and the device group |
+| Web save fails because FFmpeg is missing | Running the bare server without FFmpeg, or a custom image | Install FFmpeg or build the provided Dockerfile |
 
 ## Roadmap
 
@@ -607,7 +712,7 @@ Ordered by value, not promise:
 1. **Validate AACS/BD+ against retail media** with a real drive and real
    libraries; record evidence like the DVD capture.
 2. **Add CI** (GitHub Actions) running the suite with FFmpeg installed, plus
-   a lint/type pass.
+   a lint/type pass, the web tests and a Docker image build.
 3. **Package the project** (`pyproject.toml`, console entry points) so
    `opticrip` works without a checkout.
 4. **Add GUI tests** or at least a headless smoke test for the engine event
@@ -629,7 +734,8 @@ is tagged VERIFIED, INFERRED or UNKNOWN. Where behaviour could not be
 observed, this README and the spec say so instead of guessing.
 
 The compatible surface is the CLI and its robot output. The Tk UI, the
-`guiserver` protocol and the `9xxx` message ids are clone-local.
+`guiserver` protocol, the web UI/HTTP API and the `9xxx` message ids are
+clone-local.
 
 ## License
 
