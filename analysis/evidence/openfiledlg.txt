@@ -1,0 +1,96 @@
+WINDOW name='MakeMKV BETA' class='MainWnd' type=ControlType.Window
+  type=ControlType.Window name='Select existing video source file' autoid='' class='#32770' en=True off=False
+  type=ControlType.Pane name='' autoid='' class='DUIViewWndClassName' en=True off=False
+  type=ControlType.ToolBar name='Command Module' autoid='FolderBandModuleInner' class='FolderBandModuleInner' en=True off=False value=''
+  type=ControlType.Button name='&Help' autoid='HelpButton' class='Button3d' en=True off=False value=''
+  type=ControlType.CheckBox name='Preview pane' autoid='PreviewButton' class='Button3d' en=True off=False check=Off value=''
+  type=ControlType.SplitButton name='Details' autoid='ViewControl' class='ViewControl' en=True off=False value=''
+  type=ControlType.Button name='View Slider' autoid='SplitMenuButton' class='Button3d' en=True off=False value=''
+  type=ControlType.Button name='Organize' autoid='{7DDC1264-7E4D-4F74-BBC0-D191987C8D0F}' class='AJOSplitButton' en=True off=False value=''
+  type=ControlType.Button name='New folder' autoid='{E44616AD-6DF1-4B94-85A4-E465AE8A19DB}' class='AJOSplitButton' en=True off=False value=''
+  type=ControlType.Pane name='Control Host' autoid='ProperTreeHost' class='ProperTreeHost' en=True off=False
+  type=ControlType.Pane name='Navigation Pane' autoid='100' class='SysTreeView32' en=True off=False
+  type=ControlType.Pane name='Shell Folder View' autoid='listview' class='DUIListView' en=True off=False
+  type=ControlType.List name='Items View' autoid='' class='UIItemsView' en=True off=False value=''
+  type=ControlType.Header name='Header' autoid='' class='UIViewHeader' en=True off=False value=''
+  type=ControlType.SplitButton name='Name' autoid='System.ItemNameDisplay' class='UIColumnHeader' en=True off=False value=''
+  type=ControlType.Button name='Filter dropdown' autoid='DropDown' class='Button' en=True off=False value=''
+  type=ControlType.SplitButton name='Date modified' autoid='System.DateModified' class='UIColumnHeader' en=True off=False value=''
+  type=ControlType.Button name='Filter dropdown' autoid='DropDown' class='Button' en=True off=False value=''
+  type=ControlType.SplitButton name='Type' autoid='System.ItemTypeText' class='UIColumnHeader' en=True off=False value=''
+  type=ControlType.Button name='Filter dropdown' autoid='DropDown' class='Button' en=True off=False value=''
+  type=ControlType.SplitButton name='Size' autoid='System.Size' class='UIColumnHeader' en=True off=False value=''
+  type=ControlType.Button name='Filter dropdown' autoid='DropDown' class='Button' en=True off=False value=''
+  type=ControlType.ListItem name='.freebuff' autoid='0' class='UIItem' en=True off=False selected=False value='.freebuff'
+  type=ControlType.Edit name='Name' autoid='System.ItemNameDisplay' class='UIProperty' en=True off=False value='.freebuff'
+  type=ControlType.Edit name='Date modified' autoid='System.DateModified' class='UIProperty' en=True off=False value='?10/?29/?2026 ??8:48 PM'
+  type=ControlType.Edit name='Type' autoid='System.ItemTypeText' class='UIProperty' en=True off=False value='File folder'
+  type=ControlType.Edit name='Size' autoid='System.Size' class='UIProperty' en=True off=False value=''
+  type=ControlType.ListItem name='analysis' autoid='1' class='UIItem' en=True off=False selected=False value='analysis'
+  type=ControlType.Edit name='Name' autoid='System.ItemNameDisplay' class='UIProperty' en=True off=False value='analysis'
+  type=ControlType.Edit name='Date modified' autoid='System.DateModified' class='UIProperty' en=True off=False value='?10/?29/?2026 ??8:49 PM'
+  type=ControlType.Edit name='Type' autoid='System.ItemTypeText' class='UIProperty' en=True off=False value='File folder'
+  type=ControlType.Edit name='Size' autoid='System.Size' class='UIProperty' en=True off=False value=''
+  type=ControlType.Tree name='Application Controls' autoid='AppControlsModuleInner' class='AppControlsModuleInner' en=True off=True value=''
+  type=ControlType.Pane name='File name:' autoid='1090' class='Static' en=True off=False
+  type=ControlType.Pane name='' autoid='1148' class='ComboBoxEx32' en=True off=False
+  type=ControlType.Pane name='' autoid='1148' class='ComboBox' en=True off=False
+  type=ControlType.Pane name='' autoid='1148' class='Edit' en=True off=False
+  type=ControlType.Pane name='All video files (VIDEO_TS.IFO;DISCID.DAT;HVA00001.VTI;MKBROM.AACS;index.bdmv;INDEX.BDM;MovieObject.bdmv;MOVIEOBJ.BDM;info.bdav;BDMV;BDAV;MKB_RO.inf;discatt.dat;*.iso;*.mkv)' autoid='1136' class='ComboBox' en=True off=False
+  type=ControlType.Pane name='Open' autoid='1' class='Button' en=True off=False
+  type=ControlType.Pane name='Cancel' autoid='2' class='Button' en=True off=False
+  type=ControlType.Pane name='' autoid='' class='ScrollBar' en=True off=False
+  type=ControlType.Pane name='' autoid='' class='WorkerW' en=True off=False
+  type=ControlType.Pane name='' autoid='40965' class='ReBarWindow32' en=True off=False
+  type=ControlType.Pane name='' autoid='' class='TravelBand' en=True off=False
+  type=ControlType.Pane name='Navigation buttons' autoid='' class='ToolbarWindow32' en=True off=False
+  type=ControlType.Pane name='' autoid='' class='UpBand' en=True off=False
+  type=ControlType.Pane name='Up band' autoid='' class='ToolbarWindow32' en=True off=False
+  type=ControlType.Pane name='' autoid='41477' class='Address Band Root' en=True off=False
+  type=ControlType.Pane name='' autoid='' class='msctls_progress32' en=True off=False
+  type=ControlType.Pane name='' autoid='' class='Breadcrumb Parent' en=True off=False
+  type=ControlType.Pane name='Address: C:\Users\evand\Documents\OpticRip' autoid='1001' class='ToolbarWindow32' en=True off=False
+  type=ControlType.Pane name='Address band' autoid='' class='ToolbarWindow32' en=True off=False
+  type=ControlType.Pane name='' autoid='' class='SeparatorBand' en=True off=False
+  type=ControlType.Pane name='' autoid='' class='UniversalSearchBand' en=True off=False
+  type=ControlType.Pane name='' autoid='' class='Search Box' en=True off=False
+  type=ControlType.Pane name='' autoid='' class='SearchEditBoxWrapperClass' en=True off=False
+  type=ControlType.Edit name='Search Box' autoid='SearchEditBox' class='SearchEditBox' en=True off=False value=''
+  type=ControlType.Button name='Search' autoid='SearchBoxSearchButton' class='Button' en=True off=False value=''
+  type=ControlType.Pane name='' autoid='' class='SeparatorBand' en=True off=False
+  type=ControlType.ToolBar name='Toolbar' autoid='MainToolbar' class='QToolBar' en=True off=False value=''
+  type=ControlType.Button name='Open files' autoid='' class='QToolButton' en=True off=False value=''
+  type=ControlType.Button name='Backup' autoid='' class='QToolButton' en=False off=False value=''
+  type=ControlType.Button name='Save selected titles' autoid='' class='QToolButton' en=False off=False value=''
+  type=ControlType.Button name='Preferences' autoid='' class='QToolButton' en=True off=False value=''
+  type=ControlType.Button name='Eject disc' autoid='' class='QToolButton' en=False off=False value=''
+  type=ControlType.StatusBar name='' autoid='' class='QStatusBar' en=True off=False value=''
+  type=ControlType.Thumb name='' autoid='' class='QSizeGrip' en=True off=False value=''
+  type=ControlType.Custom name='' autoid='' class='QStackedWidget' en=True off=False value=''
+  type=ControlType.Custom name='' autoid='' class='QSplitter' en=True off=False value=''
+  type=ControlType.Edit name='' autoid='' class='CLogText' en=True off=False value='MakeMKV v1.18.4 win(x64-release) started
+The program can't find any usable optical drives.
+'
+  type=ControlType.Group name='' autoid='qt_scrollarea_viewport' class='QWidget' en=True off=False value=''
+  type=ControlType.Custom name='' autoid='' class='QStackedWidget' en=True off=False value=''
+  type=ControlType.Custom name='' autoid='' class='QFrame' en=True off=False value=''
+  type=ControlType.Group name='Source' autoid='' class='QGroupBox' en=True off=False value=''
+  type=ControlType.ComboBox name='Source' autoid='' class='QComboBox' en=False off=False value=''
+  type=ControlType.List name='' autoid='' class='QComboBoxListView' en=True off=False value=''
+  type=ControlType.Custom name='Source' autoid='' class='QFrame' en=True off=False value=''
+  type=ControlType.Text name='Type :' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='Source' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='Label :' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='Source' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='Protection :' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='Source' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Group name='Info' autoid='' class='QGroupBox' en=True off=False value=''
+  type=ControlType.Edit name='Info' autoid='' class='QTextEdit' en=False off=False value=''
+  type=ControlType.Group name='' autoid='qt_scrollarea_viewport' class='QWidget' en=False off=False value=''
+  type=ControlType.Custom name='' autoid='' class='QFrame' en=True off=False value=''
+  type=ControlType.Button name='No disc inserted' autoid='' class='QToolButton' en=False off=False value=''
+  type=ControlType.Thumb name='' autoid='qt_splithandle_' class='QSplitterHandle' en=True off=False value=''
+  type=ControlType.MenuBar name='' autoid='' class='QMenuBar' en=True off=False value=''
+  type=ControlType.MenuItem name='File' autoid='' class='QAction' en=True off=False value=''
+  type=ControlType.MenuItem name='View' autoid='' class='QAction' en=True off=False value=''
+  type=ControlType.MenuItem name='Help' autoid='' class='QAction' en=True off=False value=''

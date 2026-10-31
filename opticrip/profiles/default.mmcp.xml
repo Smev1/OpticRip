@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- OpticRip default profile.  Schema follows the documented .mmcp.xml layout. -->
+<profile>
+  <name lang="eng">Default</name>
+  <mkvSettings ignoreForcedSubtitlesFlag="true" useISO639Type2T="false"
+               setFirstAudioTrackAsDefault="true" setFirstSubtitleTrackAsDefault="true"
+               setFirstForcedSubtitleTrackAsDefault="true"
+               insertFirstChapter00IfMissing="true"/>
+  <outputSettings name="copy" outputFormat="directCopy">
+    <description lang="eng">Copy track as is</description>
+  </outputSettings>
+  <trackSettings input="default">
+    <output outputSettingsName="copy"
+            defaultSelection="$app_DefaultSelectionString"/>
+  </trackSettings>
+</profile>

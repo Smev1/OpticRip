@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Uncompressed PCM becomes FLAC; everything else is copied. -->
+<profile>
+  <name lang="eng">FLAC</name>
+  <mkvSettings ignoreForcedSubtitlesFlag="true" useISO639Type2T="false"
+               setFirstAudioTrackAsDefault="true" setFirstSubtitleTrackAsDefault="true"
+               setFirstForcedSubtitleTrackAsDefault="true"
+               insertFirstChapter00IfMissing="true"/>
+  <outputSettings name="copy" outputFormat="directCopy">
+    <description lang="eng">Copy track as is</description>
+  </outputSettings>
+  <outputSettings name="flac-fast" outputFormat="FLAC">
+    <description lang="eng">Convert to FLAC (fast)</description>
+    <mkvTrackSettings compression="zlib" compressionLevel="6"/>
+  </outputSettings>
+  <trackSettings input="LPCM-stereo">
+    <output outputSettingsName="flac-fast"
+            defaultSelection="$app_DefaultSelectionString"/>
+  </trackSettings>
+  <trackSettings input="LPCM-multi">
+    <output outputSettingsName="flac-fast"
+            defaultSelection="$app_DefaultSelectionString"/>
+  </trackSettings>
+  <trackSettings input="default">
+    <output outputSettingsName="copy"
+            defaultSelection="$app_DefaultSelectionString"/>
+  </trackSettings>
+</profile>

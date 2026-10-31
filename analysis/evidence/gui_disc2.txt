@@ -1,0 +1,68 @@
+WINDOW name='MakeMKV BETA' class='MainWnd' type=ControlType.Window
+  type=ControlType.ToolBar name='Toolbar' autoid='MainToolbar' class='QToolBar' en=True off=False value=''
+  type=ControlType.Button name='Open files' autoid='' class='QToolButton' en=True off=False value=''
+  type=ControlType.Button name='Backup' autoid='' class='QToolButton' en=True off=False value=''
+  type=ControlType.Button name='Save selected titles' autoid='' class='QToolButton' en=False off=False value=''
+  type=ControlType.Button name='Preferences' autoid='' class='QToolButton' en=True off=False value=''
+  type=ControlType.Button name='Eject disc' autoid='' class='QToolButton' en=True off=False value=''
+  type=ControlType.StatusBar name='' autoid='' class='QStatusBar' en=True off=False value=''
+  type=ControlType.Thumb name='' autoid='' class='QSizeGrip' en=True off=False value=''
+  type=ControlType.Custom name='' autoid='' class='QStackedWidget' en=True off=False value=''
+  type=ControlType.Custom name='' autoid='' class='QSplitter' en=True off=False value=''
+  type=ControlType.Edit name='' autoid='' class='CLogText' en=True off=False value='MakeMKV v1.18.4 win(x64-release) started
+'
+  type=ControlType.Group name='' autoid='qt_scrollarea_viewport' class='QWidget' en=True off=False value=''
+  type=ControlType.Custom name='' autoid='' class='QStackedWidget' en=True off=False value=''
+  type=ControlType.Custom name='' autoid='' class='QFrame' en=True off=False value=''
+  type=ControlType.Group name='Source' autoid='' class='QGroupBox' en=True off=False value=''
+  type=ControlType.ComboBox name='Source' autoid='' class='QComboBox' en=True off=False value='BD-RE HL-DT-ST BD-RE BU40N 1.00 SIM21218G5517'
+  type=ControlType.List name='' autoid='' class='QComboBoxListView' en=True off=False value=''
+  type=ControlType.ListItem name='BD-RE HL-DT-ST BD-RE BU40N 1.00 SIM21218G5517' autoid='' class='' en=True off=False selected=True value=''
+  type=ControlType.Custom name='Source' autoid='' class='QFrame' en=True off=False value=''
+  type=ControlType.Text name='Type :' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='DVD' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='Label :' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='OVER_THE_HEDGE' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='Protection :' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='CSS/CPPM' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Group name='Info' autoid='' class='QGroupBox' en=True off=False value=''
+  type=ControlType.Edit name='Info' autoid='' class='QTextEdit' en=True off=False value='Drive Information
+OS device name: D:
+Current profile: DVD-ROM
+Manufacturer: HL-DT-ST
+Product: BD-RE BU40N
+Revision: 1.00
+Serial number: SIM21218G5517
+Firmware date: 2116-12-20 15:28
+Bus encryption flags: 17
+
+LibreDrive Information
+Status: Enabled
+Drive platform: MT1959
+Firmware type: Original (unpatched)
+Firmware version: 1.00
+DVD all regions: Yes
+BD raw data read: Yes
+BD raw metadata read: Yes
+Unrestricted read speed: Yes
+
+Disc Information
+Label: OVER_THE_HEDGE
+Timestamp: 2006-08-29 22:00:17
+Protection: CSS/CPPM
+Data capacity: 6.83 Gb
+Disc type: DVD-ROM
+Disc size: 120mm
+Maximum read rate: 10.08 Mbps [1x]
+Number of layers: 2 (OTP)
+'
+  type=ControlType.Group name='' autoid='qt_scrollarea_viewport' class='QWidget' en=True off=False value=''
+  type=ControlType.Group name='' autoid='qt_scrollarea_vcontainer' class='QWidget' en=True off=False value=''
+  type=ControlType.ScrollBar name='' autoid='' class='QScrollBar' en=True off=False value='0'
+  type=ControlType.Custom name='' autoid='' class='QFrame' en=True off=False value=''
+  type=ControlType.Button name='Open DVD disc' autoid='' class='QToolButton' en=True off=False value=''
+  type=ControlType.Thumb name='' autoid='qt_splithandle_' class='QSplitterHandle' en=True off=False value=''
+  type=ControlType.MenuBar name='' autoid='' class='QMenuBar' en=True off=False value=''
+  type=ControlType.MenuItem name='File' autoid='' class='QAction' en=True off=False value=''
+  type=ControlType.MenuItem name='View' autoid='' class='QAction' en=True off=False value=''
+  type=ControlType.MenuItem name='Help' autoid='' class='QAction' en=True off=False value=''

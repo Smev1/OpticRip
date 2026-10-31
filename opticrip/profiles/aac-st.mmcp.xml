@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Multi-channel audio is mixed to stereo and encoded as AAC. -->
+<profile>
+  <name lang="eng">AAC stereo</name>
+  <mkvSettings ignoreForcedSubtitlesFlag="true" useISO639Type2T="false"
+               setFirstAudioTrackAsDefault="true" setFirstSubtitleTrackAsDefault="true"
+               setFirstForcedSubtitleTrackAsDefault="true"
+               insertFirstChapter00IfMissing="true"/>
+  <outputSettings name="copy" outputFormat="directCopy">
+    <description lang="eng">Copy track as is</description>
+  </outputSettings>
+  <outputSettings name="aac-st" outputFormat="AAC">
+    <description lang="eng">Convert to AAC stereo</description>
+    <extraArgs>profile=LC</extraArgs>
+  </outputSettings>
+  <audioMixSettings name="stereo16" outputBPS="16" outputChannelLayout="stereo"
+                    mix="DolbyPrologic2" centerMixLevel="-3dB"
+                    surroundMixLevel="-6dB" lfeMixLevel="0">
+    <description lang="eng">Dolby Pro Logic II downmix</description>
+  </audioMixSettings>
+  <trackSettings input="default">
+    <output outputSettingsName="aac-st"
+            defaultSelection="$app_DefaultSelectionString"/>
+  </trackSettings>
+</profile>

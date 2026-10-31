@@ -1,0 +1,18 @@
+21:28:53 FROM 127.0.0.1:65132 CONNECT dns.google:443 HTTP/1.1
+21:28:53    Host: dns.google:443
+21:28:53    Proxy-Connection: Keep-Alive
+21:28:53 FROM 127.0.0.1:65135 CONNECT cloudflare-dns.com:443 HTTP/1.1
+21:28:53    Host: cloudflare-dns.com:443
+21:28:53    Proxy-Connection: Keep-Alive
+21:28:53 FROM 127.0.0.1:65138 CONNECT dns-nosec.quad9.net:443 HTTP/1.1
+21:28:53    Host: dns-nosec.quad9.net:443
+21:28:53    Proxy-Connection: Keep-Alive
+21:28:56 FROM 127.0.0.1:65141 CONNECT dns.google:443 HTTP/1.1
+21:28:56    Host: dns.google:443
+21:28:56    Proxy-Connection: Keep-Alive
+21:28:56 FROM 127.0.0.1:65144 CONNECT cloudflare-dns.com:443 HTTP/1.1
+21:28:56    Host: cloudflare-dns.com:443
+21:28:56    Proxy-Connection: Keep-Alive
+21:28:56 FROM 127.0.0.1:65147 CONNECT dns-nosec.quad9.net:443 HTTP/1.1
+21:28:56    Host: dns-nosec.quad9.net:443
+21:28:56    Proxy-Connection: Keep-Alive

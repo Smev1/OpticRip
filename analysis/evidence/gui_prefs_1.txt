@@ -1,0 +1,2 @@
+WINDOW name='MakeMKV preferences' class='Qt51517QWindowIcon' type=ControlType.Window
+WINDOW name='MakeMKV BETA' class='Qt51517QWindowIcon' type=ControlType.Window

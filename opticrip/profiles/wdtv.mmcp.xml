@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Direct copy, but text subtitles are converted to SRT for set-top boxes. -->
+<profile>
+  <name lang="eng">WDTV</name>
+  <mkvSettings ignoreForcedSubtitlesFlag="false" useISO639Type2T="true"
+               setFirstAudioTrackAsDefault="true" setFirstSubtitleTrackAsDefault="true"
+               setFirstForcedSubtitleTrackAsDefault="true"
+               insertFirstChapter00IfMissing="true"/>
+  <outputSettings name="copy" outputFormat="directCopy">
+    <description lang="eng">Copy track as is</description>
+  </outputSettings>
+  <outputSettings name="srt" outputFormat="SRT">
+    <description lang="eng">Convert to SubRip</description>
+  </outputSettings>
+  <trackSettings input="default">
+    <output outputSettingsName="copy"
+            defaultSelection="$app_DefaultSelectionString"/>
+  </trackSettings>
+</profile>

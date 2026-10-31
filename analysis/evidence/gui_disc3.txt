@@ -1,0 +1,163 @@
+WINDOW name='MakeMKV BETA' class='MainWnd' type=ControlType.Window
+  type=ControlType.ToolBar name='Toolbar' autoid='MainToolbar' class='QToolBar' en=True off=False value=''
+  type=ControlType.Button name='Open files' autoid='' class='QToolButton' en=False off=False value=''
+  type=ControlType.Button name='Backup' autoid='' class='QToolButton' en=False off=False value=''
+  type=ControlType.Button name='Save selected titles' autoid='' class='QToolButton' en=False off=False value=''
+  type=ControlType.Button name='Preferences' autoid='' class='QToolButton' en=False off=False value=''
+  type=ControlType.Button name='Eject disc' autoid='' class='QToolButton' en=False off=False value=''
+  type=ControlType.StatusBar name='' autoid='' class='QStatusBar' en=True off=False value=''
+  type=ControlType.Thumb name='' autoid='' class='QSizeGrip' en=True off=False value=''
+  type=ControlType.Custom name='' autoid='' class='QStackedWidget' en=True off=False value=''
+  type=ControlType.Custom name='' autoid='' class='QFrame' en=True off=False value=''
+  type=ControlType.Group name='Information' autoid='' class='QGroupBox' en=True off=False value=''
+  type=ControlType.Text name='Source :' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='BD-RE HL-DT-ST BD-RE BU40N 1.00 SIM21218G5517' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='Titleset id :' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='VTS_16' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='CSS sectors scanned :' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='29' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Custom name='Information' autoid='' class='QFrame' en=True off=False value=''
+  type=ControlType.ProgressBar name='Information' autoid='' class='QProgressBar' en=True off=False value='36408'
+  type=ControlType.ProgressBar name='Information' autoid='' class='QProgressBar' en=True off=False value='45371'
+  type=ControlType.Button name='Cancel' autoid='' class='QToolButtonP' en=True off=False value=''
+  type=ControlType.Text name='Opening DVD disc' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='Elapsed: 0:01:16 / Remaining : 0:00:34' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='Decrypting data' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Text name='Information' autoid='' class='QLabel' en=True off=False
+  type=ControlType.Edit name='' autoid='' class='CLogText' en=True off=False value='MakeMKV v1.18.4 win(x64-release) started
+Using LibreDrive mode (v06.3 id=64754CF46FCA)
+Using direct disc access mode
+Title #1 has length of 63 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Cells 2-2 were removed from title end
+Title #2 was added (1 cell(s), 0:03:43)
+Cells 2-2 were removed from title end
+Title #16 was added (1 cell(s), 0:15:43)
+Cells 2-2 were removed from title end
+Title #17 was added (1 cell(s), 0:06:03)
+Cells 2-2 were removed from title end
+Title #18 was added (1 cell(s), 0:10:56)
+Title #24 has length of 27 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #27 was added (1 cell(s), 0:02:18)
+Title #31 has length of 15 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #32 has length of 15 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #32/1 has length of 15 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #32/2 has length of 15 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Cells 18-18 were removed from title end
+Title #34 was added (17 cell(s), 1:23:02)
+Cells 2-2 were removed from title end
+Title #53 was added (1 cell(s), 0:02:54)
+Cells 2-2 were removed from title end
+Title #54 was added (1 cell(s), 0:04:02)
+Title #55 has length of 32 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #56 has length of 32 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #57 has length of 32 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Cells 2-2 were removed from title end
+Title #62 was added (1 cell(s), 0:11:59)
+Can't locate a cell for VTS 18 TTN 1 PGCN 5 PGN 1
+Can't locate a cell for VTS 18 TTN 1 PGCN 17 PGN 1
+Can't locate a cell for VTS 18 TTN 1 PGCN 29 PGN 1
+Can't locate a cell for VTS 18 TTN 1 PGCN 30 PGN 1
+Can't locate a cell for VTS 18 TTN 1 PGCN 42 PGN 1
+Can't locate a cell for VTS 18 TTN 1 PGCN 53 PGN 1
+Can't locate a cell for VTS 18 TTN 1 PGCN 54 PGN 1
+Can't locate a cell for VTS 18 TTN 1 PGCN 57 PGN 1
+Can't locate a cell for VTS 18 TTN 1 PGCN 61 PGN 1
+Title #69/1 has length of 60 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/2 has length of 60 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/3 has length of 51 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/4 has length of 7 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/5 has length of 7 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/6 has length of 7 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/7 has length of 6 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/8 has length of 7 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/9 has length of 7 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/10 has length of 7 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/11 has length of 7 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/12 has length of 7 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/13 has length of 7 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/14 has length of 7 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/15 has length of 3 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/16 has length of 6 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/17 has length of 5 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/18 has length of 5 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/19 has length of 3 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/20 has length of 5 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/21 has length of 5 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/22 has length of 3 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/23 has length of 3 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/24 has length of 4 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/25 has length of 6 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/26 has length of 12 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/27 has length of 11 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/28 has length of 5 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/29 has length of 5 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/30 has length of 7 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/31 has length of 7 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/32 has length of 5 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/33 has length of 7 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/34 has length of 8 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/35 has length of 11 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/36 has length of 5 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/37 has length of 4 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/38 has length of 5 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/39 has length of 6 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/40 has length of 5 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/41 has length of 3 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/42 has length of 4 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/43 has length of 5 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/44 has length of 4 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/45 has length of 3 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/46 has length of 4 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/47 has length of 11 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/48 has length of 36 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/49 has length of 10 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/50 has length of 36 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #69/51 has length of 31 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #70 has length of 106 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Cells 2-2 were removed from title end
+Title #71 was added (1 cell(s), 0:02:21)
+Cells 2-2 were removed from title end
+Title #72 was added (1 cell(s), 0:02:30)
+Title #75 was added (2 cell(s), 0:04:40)
+Title #75/1 has length of 9 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #75/2 has length of 9 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #76 was added (1 cell(s), 0:04:31)
+Title #76/1 has length of 9 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #76/2 has length of 9 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Can't locate a cell for VTS 25 TTN 1 PGCN 2 PGN 1
+Can't locate a cell for VTS 25 TTN 1 PGCN 3 PGN 1
+Can't locate a cell for VTS 25 TTN 1 PGCN 8 PGN 1
+Can't locate a cell for VTS 25 TTN 1 PGCN 9 PGN 1
+Can't locate a cell for VTS 25 TTN 1 PGCN 17 PGN 1
+Can't locate a cell for VTS 25 TTN 1 PGCN 25 PGN 1
+Title #77/1 has length of 4 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/2 has length of 21 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/3 has length of 7 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/4 has length of 22 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/5 has length of 7 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/6 has length of 5 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/7 has length of 4 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/8 has length of 3 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/9 has length of 4 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/10 has length of 3 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/11 has length of 4 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/12 has length of 10 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/13 has length of 11 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/14 has length of 11 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/15 has length of 10 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/16 has length of 8 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/17 has length of 8 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/18 has length of 8 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/19 has length of 22 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/20 has length of 22 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+Title #77/21 has length of 22 seconds which is less than minimum title length of 120 seconds and was therefore skipped
+'
+  type=ControlType.Group name='' autoid='qt_scrollarea_viewport' class='QWidget' en=True off=False value=''
+  type=ControlType.Group name='' autoid='qt_scrollarea_hcontainer' class='QWidget' en=True off=False value=''
+  type=ControlType.ScrollBar name='' autoid='' class='QScrollBar' en=True off=False value='0'
+  type=ControlType.Group name='' autoid='qt_scrollarea_vcontainer' class='QWidget' en=True off=False value=''
+  type=ControlType.ScrollBar name='' autoid='' class='QScrollBar' en=True off=False value='1382'
+  type=ControlType.MenuBar name='' autoid='' class='QMenuBar' en=True off=False value=''
+  type=ControlType.MenuItem name='File' autoid='' class='QAction' en=True off=False value=''
+  type=ControlType.MenuItem name='View' autoid='' class='QAction' en=True off=False value=''
+  type=ControlType.MenuItem name='Help' autoid='' class='QAction' en=True off=False value=''

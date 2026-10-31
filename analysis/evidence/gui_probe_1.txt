@@ -1,0 +1,37 @@
+=== PID 25104 MainWindowTitle='MakeMKV BETA'
+=== UIA
+UIAWIN name='MakeMKV BETA' class='MainWnd' type=ControlType.Window
+  UIA type=ControlType.ToolBar name='Toolbar' autoid='MainToolbar' class='QToolBar' enabled=True offscreen=False
+  UIA type=ControlType.Button name='Open files' autoid='' class='QToolButton' enabled=True offscreen=False
+  UIA type=ControlType.Button name='Backup' autoid='' class='QToolButton' enabled=False offscreen=False
+  UIA type=ControlType.Button name='Save selected titles' autoid='' class='QToolButton' enabled=False offscreen=False
+  UIA type=ControlType.Button name='Preferences' autoid='' class='QToolButton' enabled=True offscreen=False
+  UIA type=ControlType.Button name='Eject disc' autoid='' class='QToolButton' enabled=False offscreen=False
+  UIA type=ControlType.StatusBar name='' autoid='' class='QStatusBar' enabled=True offscreen=False
+  UIA type=ControlType.Thumb name='' autoid='' class='QSizeGrip' enabled=True offscreen=False
+  UIA type=ControlType.Custom name='' autoid='' class='QStackedWidget' enabled=True offscreen=False
+  UIA type=ControlType.Custom name='' autoid='' class='QSplitter' enabled=True offscreen=False
+  UIA type=ControlType.Edit name='' autoid='' class='CLogText' enabled=True offscreen=False
+  UIA type=ControlType.Group name='' autoid='qt_scrollarea_viewport' class='QWidget' enabled=True offscreen=False
+  UIA type=ControlType.Custom name='' autoid='' class='QStackedWidget' enabled=True offscreen=False
+  UIA type=ControlType.Custom name='' autoid='' class='QFrame' enabled=True offscreen=False
+  UIA type=ControlType.Group name='Source' autoid='' class='QGroupBox' enabled=True offscreen=False
+  UIA type=ControlType.ComboBox name='Source' autoid='' class='QComboBox' enabled=False offscreen=False
+  UIA type=ControlType.List name='' autoid='' class='QComboBoxListView' enabled=True offscreen=False
+  UIA type=ControlType.Custom name='Source' autoid='' class='QFrame' enabled=True offscreen=False
+  UIA type=ControlType.Text name='Type :' autoid='' class='QLabel' enabled=True offscreen=False
+  UIA type=ControlType.Text name='Source' autoid='' class='QLabel' enabled=True offscreen=False
+  UIA type=ControlType.Text name='Label :' autoid='' class='QLabel' enabled=True offscreen=False
+  UIA type=ControlType.Text name='Source' autoid='' class='QLabel' enabled=True offscreen=False
+  UIA type=ControlType.Text name='Protection :' autoid='' class='QLabel' enabled=True offscreen=False
+  UIA type=ControlType.Text name='Source' autoid='' class='QLabel' enabled=True offscreen=False
+  UIA type=ControlType.Group name='Info' autoid='' class='QGroupBox' enabled=True offscreen=False
+  UIA type=ControlType.Edit name='Info' autoid='' class='QTextEdit' enabled=False offscreen=False
+  UIA type=ControlType.Group name='' autoid='qt_scrollarea_viewport' class='QWidget' enabled=False offscreen=False
+  UIA type=ControlType.Custom name='' autoid='' class='QFrame' enabled=True offscreen=False
+  UIA type=ControlType.Button name='No disc inserted' autoid='' class='QToolButton' enabled=False offscreen=False
+  UIA type=ControlType.Thumb name='' autoid='qt_splithandle_' class='QSplitterHandle' enabled=True offscreen=False
+  UIA type=ControlType.MenuBar name='' autoid='' class='QMenuBar' enabled=True offscreen=False
+  UIA type=ControlType.MenuItem name='File' autoid='' class='QAction' enabled=True offscreen=False
+  UIA type=ControlType.MenuItem name='View' autoid='' class='QAction' enabled=True offscreen=False
+  UIA type=ControlType.MenuItem name='Help' autoid='' class='QAction' enabled=True offscreen=False

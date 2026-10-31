@@ -1,0 +1,23 @@
+C:\Program Files (x86)\MakeMKV\makemkvcon64.exe: unrecognized option: h
+Use: makemkvcon [switches] Command [Parameters]
+
+Commands:
+  info <source>
+      prints info about disc
+  mkv <source> <title id> <destination folder>
+      saves a single title to mkv file
+  backup <source> <destination folder>
+      backs up disc to a hard drive
+  f <args>
+      run universal firmware tool
+  reg <key string or file name>
+      enter registration key into program
+
+Source specification:
+  iso:<FileName>    - open iso image <FileName>
+  file:<FolderName> - open files in folder <FolderName>
+  disc:<DiscId>     - open disc with id <DiscId> (see list Command)
+  dev:<DeviceName>  - open disc with OS device name <DeviceName>
+
+Switches:
+  -r --robot        - turn on "robot" mode, see http://www.makemkv.com/developers
