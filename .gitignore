@@ -1,6 +1,9 @@
 __pycache__/
 *.py[cod]
 .cloud-attachments/
+.tmp-udf/
+analysis/fixtures/*.mkv
+analysis/fixtures/*.iso
 .run/
 data/
 output/

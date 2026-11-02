@@ -29,6 +29,8 @@ Tooling and captured evidence used to produce [`../CLONE_SPEC.md`](../CLONE_SPEC
 `evidence/` holds console captures, UIA dumps, registry snapshots, screenshots and full string dumps.
 Large text dumps (`strings_*.txt`) are kept because every offset cited in the spec resolves there.
 
+Large media fixtures are **not** tracked. The 104 MB rip sample, the junk `test.mkv`/`junk.iso` probes and the scratch ISO images under `.tmp-udf/` were removed from version control; `fixtures/fakebd/` (a few kilobytes of Blu-ray structure) is all that remains, and the test suite generates any media it needs.
+
 ## Reproduce
 
 ```bash

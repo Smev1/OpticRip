@@ -1,9 +1,13 @@
 """The GUI's JSON-lines protocol, end to end.
 
 The engine runs in its own process, so this test drives the real
-``guiserver`` command: open an MKV, tick only its audio track, save, and probe
-the result.  It is the regression guard for the selection plumbing and for
-the worker-thread save path (which keeps Cancel responsive).
+``guiserver`` command: build a tiny two-stream MKV with FFmpeg, open it, tick
+only its audio track, save, and probe the result.  It is the regression guard
+for the selection plumbing and for the worker-thread save path (which keeps
+Cancel responsive).
+
+The source clip is generated instead of committed, so the repository carries
+no media binaries and the stream layout the assertions rely on stays visible.
 """
 
 import json
@@ -18,16 +22,18 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from opticrip.ffmpeg import available, ffprobe_json
+from opticrip.ffmpeg import available, ffprobe_json, tool
 
 ROOT = Path(__file__).resolve().parents[1]
-FIXTURE = ROOT / "analysis" / "fixtures" / "test.mkv"
+FIXTURE_SECONDS = 4
 
 
-@unittest.skipUnless(available() and FIXTURE.exists(), "ffmpeg and the MKV fixture are required")
+@unittest.skipUnless(available(), "ffmpeg is required")
 class GuiServerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.fixture = self._build_fixture()
         self.env = mock.patch.dict(os.environ, {
             "OPTICRIP_JSON_SETTINGS": "1",
             "OPTICRIP_DATA_DIR": self.tmp.name,
@@ -54,6 +60,30 @@ class GuiServerTests(unittest.TestCase):
         self.env.stop()
         self.tmp.cleanup()
 
+    def _build_fixture(self) -> Path:
+        """Synthesise the two-stream MKV this class saves from.
+
+        FFmpeg is already required by the assertions (the output is probed),
+        so generating the clip costs a second and keeps a 400 KB opaque blob
+        out of the repository.
+        """
+        target = Path(self.tmp.name) / "fixture.mkv"
+        command = [
+            tool("ffmpeg"), "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i",
+            f"testsrc=size=320x240:rate=25:duration={FIXTURE_SECONDS}",
+            "-f", "lavfi", "-i",
+            f"sine=frequency=440:duration={FIXTURE_SECONDS}",
+            "-map", "0:v", "-map", "1:a",
+            "-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", "-shortest",
+            str(target),
+        ]
+        completed = subprocess.run(command, capture_output=True, text=True)
+        if completed.returncode != 0 or not target.exists():
+            self.skipTest("could not build the MKV fixture: "
+                          f"{completed.stderr.strip()[-300:]}")
+        return target
+
     def _reader(self):
         assert self.proc.stdout is not None
         for line in self.proc.stdout:
@@ -78,7 +108,7 @@ class GuiServerTests(unittest.TestCase):
 
     def test_save_honours_title_and_track_selection(self):
         self.wait_for("ready")
-        self.send("open", spec=str(FIXTURE))
+        self.send("open", spec=str(self.fixture))
         disc_event = self.wait_for("disc")
         titles = disc_event["disc"]["titles"]
         self.assertEqual(len(titles), 1)
