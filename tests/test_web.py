@@ -111,11 +111,15 @@ class WebTests(unittest.TestCase):
         self.assertIn("open a source", data["error"])
 
     def test_cross_origin_post_is_refused(self):
-        status, data, _ = self.json_request(
+        status, data, headers = self.json_request(
             "POST", "/api/open", {"spec": "iso:/tmp/x.iso"},
             {"Origin": "http://evil.example"})
         self.assertEqual(status, 403)
         self.assertIn("cross-origin", data["error"])
+        # The request body was never read, so the socket must not be reused:
+        # replaying the leftover body as a request line desynchronises the
+        # connection and turns a clean 403 into a socket traceback.
+        self.assertEqual(headers.get("Connection"), "close")
 
     def test_invalid_json_is_rejected(self):
         connection = http.client.HTTPConnection(

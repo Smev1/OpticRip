@@ -326,12 +326,26 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", cache)
         for name, value in _SECURITY_HEADERS.items():
             self.send_header(name, value)
+        if self.close_connection:
+            self.send_header("Connection", "close")
         self.end_headers()
 
     def _json(self, payload: Any, status: int = HTTPStatus.OK) -> None:
         data = json.dumps(payload).encode("utf-8")
         self._headers(status, "application/json; charset=utf-8", len(data))
         self.wfile.write(data)
+
+    def _reject(self, payload: dict[str, Any], status: int) -> None:
+        """Answer a request whose body we deliberately did not read.
+
+        Writing the error alone is not enough: with HTTP/1.1 keep-alive the
+        unread body stays in the socket buffer, so the parser would read it as
+        the next request line, fail, and then fail again to report that second
+        error on the closing connection.  Closing with the response keeps the
+        framing honest.
+        """
+        self.close_connection = True
+        self._json(payload, status)
 
     def _static(self, name: str) -> None:
         content_type = _ASSETS.get(name)
@@ -392,8 +406,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
         if not self._same_origin():
-            self._json({"error": "cross-origin request refused"},
-                       HTTPStatus.FORBIDDEN)
+            self._reject({"error": "cross-origin request refused"},
+                         HTTPStatus.FORBIDDEN)
             return
         state: WebState = self.server.state  # type: ignore[attr-defined]
         path = urlparse(self.path).path
@@ -417,7 +431,9 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
                 return
         except ValueError as exc:
-            self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            # A bad length or content type leaves the body unread, so this is
+            # never safe to keep alive either.
+            self._reject({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
         if not accepted:
             self._json({"error": "another job is already running"},
