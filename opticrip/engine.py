@@ -29,11 +29,11 @@ from .discfs import CssFS, DiscFS, FolderFS, IsoFS, detect_kind
 from .dvdcss import DvdcssError
 from .dvd import DvdError, has_scrambled_sectors, parse_disc as parse_dvd
 from .ffmpeg import (FFmpegError, can_decode_video, ffprobe_json, probe_title,
-                     remux, streams_from_probe)
+                     remux)
 from .iso9660 import IsoError, UnsupportedImage, sniff
-from .model import Disc, Stream, Title, fmt_bitrate, fmt_capacity, fmt_duration, fmt_size
+from .model import Disc, Stream, Title, fmt_bitrate
 from .naming import expand as expand_name, unique_path
-from .profiles import Profile, ProfileError, builtin_default, load_named
+from .profiles import Profile, builtin_default
 from .robot import EventWriter, NullWriter
 from .settings import Settings
 from . import drives as drivelib
@@ -89,6 +89,34 @@ class OpenResult:
     fs: DiscFS | None = None
     spec: str = ""
     path: str = ""
+
+
+def source_spec(path: str | Path) -> str:
+    """Turn a file-dialog selection into an ``open_source`` spec.
+
+    The GUI can select ISO images and files inside a disc tree, while the
+    engine expects ``iso:`` for an image and ``file:`` for the disc root.
+    Selecting ``VIDEO_TS/VTS_01_0.IFO`` (or ``BDMV/index.bdmv``) therefore
+    has to resolve to its grandparent folder, not to the file itself.
+    """
+    target = Path(path)
+    suffix = target.suffix.lower()
+    if suffix == ".iso":
+        return f"iso:{target}"
+    if suffix == ".mkv":
+        return str(target)
+    if target.is_dir():
+        return f"file:{target}"
+    upper = target.name.upper()
+    parent = target.parent
+    if upper.endswith(".IFO") and parent.name.upper() == "VIDEO_TS":
+        return f"file:{parent.parent}"
+    if (upper in ("INDEX.BDMV", "MOVIEOBJECT.BDMV")
+            and parent.name.upper() == "BDMV"):
+        return f"file:{parent.parent}"
+    if upper == "INFO.BDAV" and parent.name.upper() == "BDAV":
+        return f"file:{parent.parent}"
+    return f"file:{target}"
 
 
 class Engine:
@@ -501,7 +529,13 @@ class Engine:
                            else "AACS/BD+" if kind == "Blu-ray" and disc.encrypted
                            and bdplus_metadata
                            else "AACS" if kind == "Blu-ray" and disc.encrypted else "None")
-        disc.timestamp = ""
+        disc.timestamp = disc.timestamp or ""
+        if (not disc.timestamp and self.spec.startswith("disc:")
+                and hasattr(fs, "root")):
+            # The reference shows the volume timestamp on the Disc
+            # Information page.  The root directory mtime is the closest
+            # portable approximation; images and loose folders have none.
+            disc.timestamp = drivelib.disc_timestamp(str(fs.root))
         if kind == "DVD":
             try:
                 stat = fs.size("VIDEO_TS/VIDEO_TS.IFO")
@@ -952,23 +986,41 @@ class Engine:
                 caption_dir.cleanup()
 
     def _map_pids(self, first_input: str, title: Title) -> None:
+        """Rewrite Blu-ray PIDs to ffmpeg's per-kind stream ordinals.
+
+        ``-map`` addresses streams per kind, but the probe reports absolute
+        indices.  The STN table order is not guaranteed to match ffprobe's
+        order, so mapping by the disc's ordinal can select the wrong track.
+        """
         try:
             info = ffprobe_json(first_input)
         except FFmpegError:
             return
-        by_pid: dict[int, int] = {}
-        by_ordinal: list[int] = []
+        counters = {"video": 0, "audio": 0, "subtitle": 0}
+        by_pid: dict[tuple[str, int], int] = {}
+        by_position: dict[str, list[int]] = {kind: [] for kind in counters}
         for entry in info.get("streams", []):
-            index = int(entry.get("index", -1))
-            by_ordinal.append(index)
+            kind = entry.get("codec_type")
+            if kind not in counters:
+                continue
+            ordinal = counters[kind]
+            counters[kind] = ordinal + 1
+            by_position[kind].append(ordinal)
             raw = entry.get("id")
             if isinstance(raw, str) and raw.startswith("0x"):
-                by_pid[int(raw, 16)] = index
+                by_pid[(kind, int(raw, 16))] = ordinal
         for stream in title.streams:
-            if stream.pid and stream.pid in by_pid:
-                stream.source_index = by_pid[stream.pid]
-            elif stream.source_index is not None and stream.source_index < len(by_ordinal):
-                stream.source_index = by_ordinal[stream.source_index]
+            mapped = (by_pid.get((stream.kind, stream.pid))
+                      if stream.pid else None)
+            if mapped is None and not stream.pid and stream.source_index is not None:
+                # No PID to match: the STN's per-kind ordinal is a positional
+                # hint, but only trust it when the probe has that position.
+                positions = by_position.get(stream.kind, [])
+                if 0 <= stream.source_index < len(positions):
+                    mapped = positions[stream.source_index]
+            # A stale or out-of-range ordinal must fall back to the normal
+            # per-kind mapping instead of producing an invalid -map.
+            stream.source_index = mapped
 
     def save_selected(self, destination: Path,
                       cancel: Callable[[], bool] | None = None) -> tuple[int, int]:

@@ -160,7 +160,8 @@ Or use the engine directly:
 python -m opticrip.cli -r info disc:0
 ```
 
-`python run.py` starts the GUI with an empty window.
+`python run.py` starts the GUI with an empty window. On Windows it relaunches
+under `pythonw.exe` so the GUI does not leave a console window open.
 `python run.py --open file:/path/to/VIDEO_TS` (or `-o`) opens a source after
 startup. The CLI must be run from the repository root (or with the repository
 root on `PYTHONPATH`), because `opticrip` is not installed as a package.
@@ -607,7 +608,7 @@ python -m unittest discover -s tests
 With FFmpeg installed only the drive test skips:
 
 ```text
-Ran 192 tests
+Ran 201 tests
 OK (skipped=1)
 ```
 
@@ -616,9 +617,9 @@ remux, caption muxing, encrypted-clip staging and the `guiserver` save
 protocol. Those skips are environmental, not failures, and installing FFmpeg
 is enough to exercise them.
 
-The current suite includes four regression tests from the maintenance pass
-(three for FFmpeg tool discovery, one for message rendering) and eight
-HTTP-level tests for the web UI.
+The current suite includes regression tests for FFmpeg tool discovery, message
+rendering, GUI source routing, Blu-ray stream mapping and timestamp naming, plus
+eight HTTP-level tests for the web UI.
 
 No test requires real CSS/AACS/BD+ keys or retail media, and none reads a
 committed media file: synthetic inputs are built in-process and the MKV used by

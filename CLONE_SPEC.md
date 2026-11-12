@@ -1103,9 +1103,12 @@ not captured in §25.3 and are now implemented:
   (PES -> substream id `0x80+i` -> AC-3 `frmsizecod`). Six-channel layouts are
   spelled `Surround 5.1` with attribute 40 `5.1(side)`; stereo is `Stereo` /
   `stereo`.
-* **Remaining differences.** (a) No `S_CC608/DVD` track: the reference creates
-  a `CC→Text` SubRip track (23 `SINFO` rows and one output stream per captioned
-  title); OpticRip does not parse DVD CC user data. (b) The main feature is
+* **Remaining differences.** (a) At the time of this comparison OpticRip did
+  not expose a `S_CC608/DVD` track, while the reference creates a `CC→Text`
+  SubRip track (23 `SINFO` rows and one output stream per captioned title).
+  The current implementation decodes CEA-608 and emits that synthetic track;
+  it is covered by synthetic tests but has not been re-checked against this
+  physical disc. (b) The main feature is
   `1:23:11` instead of `1:23:02` (9 s), apparently the reference's handling of
   cell 17's cell command before the trailing 0.467 s cell. (c) The reference's
   title names (`YB8`, `ZB1`, ...) come from its online database, not the IFOs.
