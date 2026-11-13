@@ -19,7 +19,6 @@ from .. import drives as drivelib
 from ..aacs import AacsError, stage_library as stage_aacs
 from ..bdplus import BdplusError, stage_library as stage_bdplus
 from ..dvdcss import DvdcssError, stage_library
-from ..engine import source_spec
 from ..model import fmt_size
 from ..settings import Settings
 from .dialogs import (
@@ -406,15 +405,12 @@ class MainWindow:
         elif kind == "message":
             ident = int(event.get("id", 0))
             text = event.get("text", "")
-            flags = int(event.get("flags") or 0)
             self.log_line(f"MSG:{ident}: {text}" if self.settings.get_bool("app_ExpertMode")
                           else text)
             if self.state == "opening":
                 self.status_var.set(text)
-            # Always persist engine errors, even when verbose logging is off;
-            # otherwise a failed long rip leaves nothing to diagnose.
-            if self.settings.get_bool("app_ShowDebug") or flags & messages.ERROR:
-                self._debug(f"MSG:{ident}: {text}")
+            if self.settings.get_bool("app_ShowDebug"):
+                self._debug(text)
         elif kind == "progress":
             try:
                 total = max(1, int(event.get("total") or 65536))
@@ -778,7 +774,12 @@ class MainWindow:
         )
         if not path:
             return
-        self._open_spec(source_spec(path))
+        if Path(path).suffix.lower() == ".mkv":
+            self._open_spec(path)
+        elif Path(path).is_dir():
+            self._open_spec(f"file:{path}")
+        else:
+            self._open_spec(f"file:{path}")
 
     #: Library pickers share one implementation; only the messages and the
     #: description of what the library unlocks differ.

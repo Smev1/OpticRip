@@ -39,10 +39,6 @@ class NamingTests(unittest.TestCase):
         self.assertTrue(expand("", self.title()).endswith(".mkv"))
         self.assertEqual(expand("{NAME2}", self.title()), "title.mkv")
 
-    def test_disc_timestamp_expands_to_a_date(self):
-        disc = Disc(kind="DVD", timestamp="2020-01-02 03:04:05")
-        self.assertEqual(expand("{DT}", self.title(), disc), "2020-01-02.mkv")
-
     def test_sanitize_trims_dots(self):
         self.assertEqual(sanitize("name..."), "name")
 

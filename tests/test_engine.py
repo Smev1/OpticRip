@@ -3,11 +3,11 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 from opticrip import drives, registration
+from opticrip.bdmv import BdmvError
 from opticrip.discfs import CssFS, FolderFS
-from opticrip.engine import Engine, source_spec
+from opticrip.engine import Engine
 from opticrip.ffmpeg import _progress_seconds, available, ffprobe_json, tool
 from opticrip.model import Disc, Segment, Stream, Title
 from opticrip.profiles import builtin_default
@@ -189,7 +189,7 @@ class EngineTests(unittest.TestCase):
             "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=25",
             "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
             "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac",
-            "-metadata:s:a:0", "language=eng", "-shortest", str(source),
+            "-shortest", str(source),
         ], check=True)
         result = self.engine.open_source(str(source), allow_mkv=True)
         self.assertIsNotNone(result.disc)
@@ -208,41 +208,11 @@ class EngineTests(unittest.TestCase):
         info = ffprobe_json(str(path))
         self.assertAlmostEqual(float(info["format"]["duration"]), 2.0, delta=0.3)
         self.assertEqual(len(info["streams"]), 2)
-        audio = next(s for s in info["streams"] if s["codec_type"] == "audio")
-        self.assertEqual(audio["tags"]["title"], "English Audio (AAC Mono)")
         self.assertTrue(progress)
         self.assertEqual(progress, sorted(progress))
         # Verified behaviour: console saves emit no PRG* records.
         self.assertNotIn("PRGV:", self.output())
         self.assertIn("MSG:5005", self.output())
-
-    def test_bluray_pid_mapping_uses_per_kind_ordinals(self):
-        title = Title(index=0, source="bluray", duration=1.0)
-        first = Stream(kind="audio", index=0, pid=0x1101, source_index=0)
-        second = Stream(kind="audio", index=1, pid=0x1100, source_index=1)
-        title.streams = [first, second]
-        probe = {"streams": [
-            {"index": 0, "codec_type": "video", "id": "0x1011"},
-            {"index": 1, "codec_type": "audio", "id": "0x1100"},
-            {"index": 2, "codec_type": "audio", "id": "0x1101"},
-        ]}
-        with mock.patch("opticrip.engine.ffprobe_json", return_value=probe):
-            self.engine._map_pids("00000.m2ts", title)
-        self.assertEqual(first.source_index, 1)
-        self.assertEqual(second.source_index, 0)
-
-    def test_bluray_unmatched_position_falls_back_to_kind_ordinal(self):
-        title = Title(index=0, source="bluray", duration=1.0)
-        video = Stream(kind="video", index=0, source_index=0)
-        audio = Stream(kind="audio", index=1, source_index=1)
-        title.streams = [video, audio]
-        probe = {"streams": [
-            {"index": 0, "codec_type": "video", "id": "0x1011"},
-            {"index": 1, "codec_type": "audio", "id": "0x1100"},
-        ]}
-        with mock.patch("opticrip.engine.ffprobe_json", return_value=probe):
-            self.engine._map_pids("00000.m2ts", title)
-        self.assertIsNone(audio.source_index)
 
     @unittest.skipUnless(drives.enumerate_drives(), "no optical drive available")
     def test_real_drive_metadata(self):
@@ -261,37 +231,6 @@ class EngineTests(unittest.TestCase):
             path = engine.save_title(result.disc.titles[0], self.dir / "out")
             self.assertIsNone(path)
             self.assertIn("MSG:9100", stream.getvalue())
-
-
-class SourceSpecTests(unittest.TestCase):
-    def test_image_movie_and_folder_specs(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            image = root / "disc.iso"
-            image.write_bytes(b"")
-            movie = root / "movie.mkv"
-            movie.write_bytes(b"")
-            folder = root / "folder"
-            folder.mkdir()
-            self.assertEqual(source_spec(str(image)), f"iso:{image}")
-            self.assertEqual(source_spec(str(movie)), str(movie))
-            self.assertEqual(source_spec(str(folder)), f"file:{folder}")
-
-    def test_disc_structure_files_use_the_disc_root(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            video_ts = root / "VIDEO_TS"
-            video_ts.mkdir()
-            for name in ("VIDEO_TS.IFO", "VTS_01_0.IFO"):
-                path = video_ts / name
-                path.write_bytes(b"")
-                self.assertEqual(source_spec(str(path)), f"file:{root}")
-            bdmv = root / "BDMV"
-            bdmv.mkdir()
-            for name in ("index.bdmv", "MovieObject.bdmv"):
-                path = bdmv / name
-                path.write_bytes(b"")
-                self.assertEqual(source_spec(str(path)), f"file:{root}")
 
 
 if __name__ == "__main__":

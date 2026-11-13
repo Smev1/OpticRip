@@ -29,46 +29,6 @@ _CODEC_LABELS = {
     "mov_text": "Text",
 }
 
-_LANGUAGE_NAMES = {
-    "eng": "English", "en": "English", "fre": "French", "fra": "French",
-    "ger": "German", "deu": "German", "spa": "Spanish", "ita": "Italian",
-    "jpn": "Japanese", "chi": "Chinese", "zho": "Chinese", "kor": "Korean",
-    "por": "Portuguese", "rus": "Russian", "dut": "Dutch", "nld": "Dutch",
-    "swe": "Swedish", "nor": "Norwegian", "dan": "Danish", "fin": "Finnish",
-    "pol": "Polish", "cze": "Czech", "ces": "Czech", "hun": "Hungarian",
-    "gre": "Greek", "ell": "Greek", "tur": "Turkish", "heb": "Hebrew",
-    "ara": "Arabic", "hin": "Hindi", "tha": "Thai",
-}
-_CHANNEL_NAMES = {1: "Mono", 2: "Stereo", 6: "5.1", 8: "7.1"}
-
-
-def track_title(stream: Stream) -> str:
-    """Matroska track name: language, kind and format.
-
-    Without a title, players fall back to "Track 1" and give no clue which
-    language or format the stream is.  Sources such as MKV only carry the
-    ISO 639 code, so map the common ones to their English names.
-    """
-    language = (stream.language_name or "").strip()
-    if not language:
-        code = (stream.language or "").strip().lower()
-        if code in ("", "und"):
-            language = "Undetermined"
-        else:
-            language = _LANGUAGE_NAMES.get(code, code.upper())
-    kind = {"audio": "Audio", "subtitle": "Subtitles"}.get(
-        stream.kind, stream.kind.title() or "Track")
-    codec = (stream.codec or "").strip()
-    if stream.kind == "subtitle" and codec.lower() in ("dvd subtitles", "vobsub"):
-        codec = "VobSub"
-    details = [codec] if codec else []
-    if stream.kind == "audio":
-        channels = _CHANNEL_NAMES.get(stream.channels)
-        if channels:
-            details.append(channels)
-    suffix = f" ({' '.join(details)})" if details else ""
-    return f"{language} {kind}{suffix}"
-
 
 class FFmpegError(Exception):
     pass
@@ -387,12 +347,7 @@ def _mux_args(
                     raise FFmpegError("closed captions were not extracted")
                 mapping.extend(["-map", f"{caption_index}:0"])
                 continue
-            if title.source == "bluray" and stream.source_index is not None:
-                # _map_pids() rewrites source_index to the probe's per-kind
-                # ordinal; STN order is not guaranteed to match ffmpeg's.
-                ordinal = stream.source_index
-            else:
-                ordinal = kind_ordinal.get(id(stream))
+            ordinal = kind_ordinal.get(id(stream))
             if ordinal is None:
                 ordinal = 0
             mapping.extend(["-map", f"0:{letters.get(stream.kind, 'v')}:{ordinal}"])
@@ -428,17 +383,6 @@ def _mux_args(
                         args.extend([f"-c:s:{ordinal}", "srt"])
                     ordinal += 1
         args.extend(["-c:v", "copy"])
-    if not copy_all:
-        # Output stream N corresponds to the Nth mapped stream.  Carry the
-        # disc's language across the remux and give audio/subtitle tracks a
-        # meaningful title instead of the player's "Track N" fallback.
-        for index, stream in enumerate(streams):
-            language = (stream.language or "").lower()
-            if language and language != "und":
-                args.extend([f"-metadata:s:{index}", f"language={language}"])
-            if stream.kind in ("audio", "subtitle"):
-                args.extend([f"-metadata:s:{index}",
-                             f"title={track_title(stream)}"])
     if meta_path is not None:
         args.extend(["-map_metadata", str(meta_index),
                      "-map_chapters", str(meta_index)])

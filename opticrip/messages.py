@@ -39,7 +39,7 @@ _CATALOGUE: dict[int, MessageDef] = {
     1011: MessageDef(1011, "Using LibreDrive mode (v%1)"),
     2003: MessageDef(2003, "Error '%1' occurred while reading '%2' at offset '%3'", ERROR),
     2024: MessageDef(2024, "Unknown device - '%1'"),
-    3006: MessageDef(3006, "Opening files on harddrive at %1", HAVE_URL),
+    3006: MessageDef(3006, "Opening files on harddrive at %1"),
     3007: MessageDef(3007, "Using direct disc access mode"),
     3010: MessageDef(3010, "Can't locate a cell for VTS %1 TTN %2 PGCN %3 PGN %4", ERROR),
     3025: MessageDef(

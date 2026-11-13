@@ -569,7 +569,7 @@ def parse_disc(fs: DiscFS, min_length: int = 0, message=None,
             continue
         if trimmed and message:
             # Verified wording: "Cells 18-18 were removed from title end".
-            message(3038, pgc["cells"] - trimmed + 1, pgc["cells"])
+            message(3038, pgc["cells"], pgc["cells"])
         if vts not in vob_cache:
             vob_cache[vts] = _vob_files(fs, vts)
         vobs = vob_cache[vts]
