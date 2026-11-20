@@ -175,7 +175,7 @@ class Settings:
             backend = self.default_backend()
         self.backend = backend
         self._cache: dict[str, Any] = {}
-        self._dirty = False
+        self._changed: set[str] = set()
 
     @staticmethod
     def default_backend() -> JsonBackend | RegistryBackend:
@@ -216,13 +216,13 @@ class Settings:
 
     def set(self, name: str, value: Any) -> None:
         self._cache[name] = value
-        self._dirty = True
+        self._changed.add(name)
 
     def save(self) -> None:
-        """Persist cached values.  Raises OSError if the backend refuses."""
-        for name, value in self._cache.items():
-            self.backend.set(name, value)
-        self._dirty = False
+        """Persist changed values.  Raises OSError if the backend refuses."""
+        for name in self._changed:
+            self.backend.set(name, self._cache[name])
+        self._changed.clear()
 
     # -- well-known values ---------------------------------------------
     @property

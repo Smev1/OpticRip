@@ -332,7 +332,7 @@ class BlurayDecryptor:
             pending.extend(chunk)
             start = 0
             while len(pending) - start >= UNIT_SIZE:
-                unit = bytearray(pending[start:start + UNIT_SIZE])
+                unit = pending[start:start + UNIT_SIZE]
                 start += UNIT_SIZE
                 check_cancel()
                 self.aacs.decrypt_unit(unit)

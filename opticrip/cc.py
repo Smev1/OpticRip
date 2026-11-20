@@ -18,7 +18,6 @@ independent of the drive's read speed.
 
 from __future__ import annotations
 
-import struct
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, Sequence

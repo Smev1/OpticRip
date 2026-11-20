@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from . import BANNER, PRODUCT, __version__
+from . import PRODUCT
 from .engine import Engine
 from .profiles import ProfileError, builtin_default, load_named
 from .robot import HumanWriter, RobotWriter

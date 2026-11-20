@@ -13,7 +13,6 @@ import os
 import sys
 import tempfile
 import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
@@ -28,12 +27,11 @@ from .bdmv import BdmvError, parse_disc as parse_bdmv
 from .discfs import CssFS, DiscFS, FolderFS, IsoFS, detect_kind
 from .dvdcss import DvdcssError
 from .dvd import DvdError, has_scrambled_sectors, parse_disc as parse_dvd
-from .ffmpeg import (FFmpegError, can_decode_video, ffprobe_json, probe_title,
-                     remux, streams_from_probe)
+from .ffmpeg import FFmpegError, can_decode_video, ffprobe_json, probe_title, remux
 from .iso9660 import IsoError, UnsupportedImage, sniff
-from .model import Disc, Stream, Title, fmt_bitrate, fmt_capacity, fmt_duration, fmt_size
+from .model import Disc, Stream, Title, fmt_bitrate
 from .naming import expand as expand_name, unique_path
-from .profiles import Profile, ProfileError, builtin_default, load_named
+from .profiles import Profile, builtin_default
 from .robot import EventWriter, NullWriter
 from .settings import Settings
 from . import drives as drivelib
@@ -230,7 +228,8 @@ class Engine:
             # A zero-filled image fails as a read error at EOF, exactly like
             # the reference capture (MSG 2003 + offset == file size).
             try:
-                head = image.read_bytes()[: 1 << 20]
+                with image.open("rb") as handle:
+                    head = handle.read(1 << 20)
             except OSError:
                 head = b""
             if head and not any(head):
@@ -502,12 +501,6 @@ class Engine:
                            and bdplus_metadata
                            else "AACS" if kind == "Blu-ray" and disc.encrypted else "None")
         disc.timestamp = ""
-        if kind == "DVD":
-            try:
-                stat = fs.size("VIDEO_TS/VIDEO_TS.IFO")
-                _ = stat
-            except OSError:
-                pass
         if disc.title_count == 0:
             self.message(5010)
             self.writer.tcount(0)
@@ -910,7 +903,6 @@ class Engine:
                 if settings.compression_level:
                     compression = str(settings.compression_level)
                     break
-            started = time.time()
             # Announce the transition before ffmpeg emits its first record, so
             # the bar does not sit on the staging label after the copy ends.
             self.emit_progress(int(offset * 65536), 65536, phase="saving",
@@ -930,8 +922,6 @@ class Engine:
                 raise FFmpegError("empty output")
             self.emit_progress(65536, 65536, phase="saving",
                                phase_fraction=1.0, **fields)
-            elapsed = time.time() - started
-            _ = elapsed
             title.output_name = output.name
             self.message(9005, title.index, output.name)
             return output

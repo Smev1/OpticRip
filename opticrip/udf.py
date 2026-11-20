@@ -16,7 +16,6 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 from .iso9660 import IsoError, UnsupportedImage
 

@@ -72,16 +72,13 @@ class EngineClient:
         try:
             self.process.stdin.write(json.dumps(request) + "\n")
             self.process.stdin.flush()
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             self.events.put({"event": "error", "message": str(exc)})
 
     def close(self) -> None:
         if self.process is None:
             return
-        try:
-            self.send(cmd="quit")
-        except Exception:
-            pass
+        self.send(cmd="quit")
         try:
             self.process.wait(timeout=2)
         except subprocess.TimeoutExpired:

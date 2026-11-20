@@ -55,6 +55,20 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(self.settings.output_dir, Path("/tmp/out"))
         self.assertEqual(self.settings.get_str("path_DestDirMRU"), "/tmp/out")
 
+    def test_save_keeps_values_from_earlier_saves(self):
+        self.settings.set("app_Proxy", "a")
+        self.settings.save()
+        self.settings.set("path_OpenFile", "b")
+        self.settings.save()
+        other = Settings(JsonBackend(self.path))
+        self.assertEqual(other.get_str("app_Proxy"), "a")
+        self.assertEqual(other.get_str("path_OpenFile"), "b")
+
+    def test_save_ignores_values_that_were_only_read(self):
+        self.settings.get_str("app_Proxy")
+        self.settings.save()
+        self.assertIsNone(self.settings.backend.get("app_Proxy"))
+
 
 if __name__ == "__main__":
     unittest.main()

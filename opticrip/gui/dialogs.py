@@ -7,10 +7,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from .. import BANNER, COPYRIGHT, GUI_VERSION, PRODUCT, PRODUCT_TAG, __version__
+from .. import BANNER, COPYRIGHT, GUI_VERSION, PRODUCT, PRODUCT_TAG
 from .. import registration
-from ..profiles import discover
-from ..settings import DEFAULTS, Settings
+from ..settings import Settings
 
 LANGUAGES = [
     ("English", "eng"), ("Deutsch", "deu"), ("Français", "fra"), ("Español", "spa"),
