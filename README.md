@@ -10,8 +10,10 @@ copied, and no decryption keys are included.
 
 > **Status: beta (0.9.0).** The DVD path is the most mature and was checked
 > against a physical disc. Unencrypted Blu-ray and ISO/UDF sources work.
-> Encrypted Blu-ray is implemented but has only been exercised with fake
-> libraries and synthetic media. UHD is detected and deliberately refused.
+> Encrypted Blu-ray decryption is implemented and has been exercised once on a
+> retail AACS disc, which staged 83 % of a 38 GB clip before the observation
+> ended; that run's remux was not checked, so treat it as staging evidence
+> rather than a proven retail rip. UHD is detected and deliberately refused.
 > There is no installer, CI pipeline or license yet — see
 > [Where the project stands](#where-the-project-stands).
 
@@ -70,12 +72,12 @@ shared libraries and FFmpeg uses the Python standard library.
 | DVD closed captions | **Working** | CEA-608 (CC1) is decoded from MPEG-2 user data into a SubRip track. Pop-on, paint-on, roll-up, PAC positioning and the special/extended tables are handled. Synthetic end-to-end test. |
 | Blu-ray inspection | **Working, playlists only** | MPLS playitems and the STN stream table produce titles, streams and segments. CLPI is **not** parsed; stream metadata comes from the playlist. |
 | Blu-ray save | **Working for unencrypted discs** | m2ts clips are concatenated and remuxed. Encrypted clips are staged through libaacs/libbdplus when available. |
-| AACS | **Implemented, not retail-verified** | libaacs does the cryptography. Unit tests use fake libraries and encrypted fixtures; no commercial AACS disc was available. |
+| AACS | **Implemented, one retail disc exercised** | libaacs does the cryptography. Unit tests use fake libraries and encrypted fixtures. A retail dual-layer Blu-ray has been staged to 83 % of its 38 GB clip at 2×–5× disc speed with a KEYDB entry; the remux of that run was not verified. |
 | BD+ | **Implemented, not retail-verified** | libbdplus plus its VM configuration files. Same fake-library test status. |
 | UHD (AACS 2.x) | **Detected, refused** | The MKB type is reported as `AACS 2.x (UHD)` and saving/backup stop with message 9143. This is a designed hard limit, not a TODO. |
 | ISO / UDF sources | **Working** | ISO9660 for DVD/data images, read-only UDF 2.50 (including metadata partitions) for Blu-ray images. Unit tests plus fixtures. |
 | Whole-disc backup | **Working** | Raw or decrypted copy through the same filesystem abstraction; AACS/BD+ metadata is relocated to `MAKEMKV/` so the result opens as an unencrypted disc. A cancelled backup leaves the files copied so far. |
-| Tk GUI | **Working, manually tested** | Source picker, title/stream tree, output folder, progress, cancel for saves/backups, log pane, preferences, registration and backup dialogs. No automated UI tests. |
+| Tk GUI | **Working, manually tested** | Source picker, title/stream tree, output folder, progress, cancel for saves/backups, a log pane that explains failures with a probable cause and a next step, preferences, registration and backup dialogs. The log formatting is unit-tested; there are no automated UI tests. |
 | Web UI / Docker | **Working, HTTP-tested** | Stdlib-only browser front end over the same engine with title/stream selection, save, backup, cancel, progress and log. Dockerfile and compose recipe install FFmpeg and run non-root. The image build is not covered by CI yet, and the UI has no authentication. |
 | Profiles, selection, naming | **Working** | Four `.mmcp.xml` profiles, the selection-rule language, and the output-name template with collision suffixes. Unit-tested. |
 | Registration and settings | **Working** | `HKCU\Software\OpticRip` on Windows, JSON elsewhere. Unit-tested. |
@@ -84,7 +86,8 @@ shared libraries and FFmpeg uses the Python standard library.
 | Packaging / CI / license | **Missing** | No `pyproject.toml`, installer, GitHub Actions workflow or LICENSE file. Run from a checkout for now. |
 
 In short: DVD ripping is usable today; Blu-ray is usable for unencrypted
-discs and implemented-but-unproven for AACS/BD+; UHD is out of scope by
+discs, and AACS/BD+ decryption is implemented with one retail AACS staging run
+behind it but no verified end-to-end protected rip; UHD is out of scope by
 design.
 
 ## Feature support
@@ -265,7 +268,8 @@ Start with `python run.py`. The window offers:
 * a title tree with working-title and per-track checkboxes;
 * an output folder chooser and a configurable name template;
 * a progress bar and a Cancel button that works for saves and backups;
-* a log pane fed by engine messages;
+* a log pane fed by engine messages, where a failure is reported as a
+  probable cause, the other possibilities and a suggested next step;
 * **File** actions for loading libdvdcss/libaacs/libbdplus, selecting a
   `KEYDB.cfg`, restoring automatic detection, backup, preferences and
   registration;
@@ -276,7 +280,8 @@ newline-delimited JSON commands (`open`, `drives`, `save`, `save_all`,
 `backup`, `settings`, `register`, `cancel`, `close`, `quit`) and renders
 events (`hello`, `ready`, `opened`, `disc`, `drive`, `message`, `progress`,
 `saved`, `backup_done`, `settings_saved`, `registered`, `cancelling`,
-`closed`, `error`, `stderr`, `engine_exit`, `bye`). Saves and backups run on
+`closed`, `failure`, `error`, `stderr`, `engine_exit`, `bye`). Saves and backups
+run on
 an engine worker thread so Cancel remains responsive.
 
 One caveat: `open` is handled synchronously on the engine's stdin thread, so
@@ -288,7 +293,8 @@ and backup are cancellable.
 The browser front end wraps the same engine in a small standard-library HTTP
 server. It supports opening a source, title and track selection, saving the
 selected titles, cancelling a save or backup, whole-disc backup, progress
-and the engine log. It is single-user and deliberately has no
+and the engine log; failures appear there with the same probable cause and
+suggested fix the desktop log shows. It is single-user and deliberately has no
 authentication.
 
 ```bash
@@ -498,6 +504,7 @@ does not circumvent anything on its own and does not distribute keys.
 | `opticrip/engine.py` | All disc operations, event emission, save/backup orchestration, JSON-lines IPC |
 | `opticrip/model.py` | `Disc`, `Title`, `Stream`, `Segment` data model |
 | `opticrip/messages.py` | Numeric message catalogue and rendering |
+| `opticrip/diagnose.py` | Turns an exception into a probable cause, ranked causes and a next step for the log |
 | `opticrip/robot.py` | Robot and human record writers (`MSG`, `DRV`, `CINFO`, `TINFO`, `SINFO`, `TCOUNT`, `PRGV`, `PRGC`, `PRGT`) |
 | `opticrip/drives.py` | Windows drive enumeration, media presence, labels (16 slots) |
 | `opticrip/discfs.py` | `FolderFS`, `IsoFS`, `CssFS` and the shared `DiscFS` protocol |
@@ -582,7 +589,7 @@ clone-only ids are in the 9xxx range and are documented as `LOCAL` in
 │   ├── gui/                Tk front end
 │   ├── web/                browser front end and static assets
 │   └── profiles/           default, flac, aac-st, wdtv
-├── tests/                  22 unittest modules
+├── tests/                  23 unittest modules
 └── analysis/               evidence captures and the tooling used for the spec
 ```
 
@@ -604,21 +611,22 @@ MKV with FFmpeg.
 python -m unittest discover -s tests
 ```
 
-With FFmpeg installed only the drive test skips:
+With FFmpeg installed and a drive present the whole suite runs:
 
 ```text
-Ran 192 tests
-OK (skipped=1)
+Ran 207 tests
+OK
 ```
 
-Without `ffmpeg`/`ffprobe` eight more tests skip (`skipped=9`): the end-to-end
+Without `ffmpeg`/`ffprobe` eight tests skip: the end-to-end
 remux, caption muxing, encrypted-clip staging and the `guiserver` save
 protocol. Those skips are environmental, not failures, and installing FFmpeg
 is enough to exercise them.
 
 The current suite includes four regression tests from the maintenance pass
-(three for FFmpeg tool discovery, one for message rendering) and eight
-HTTP-level tests for the web UI.
+(three for FFmpeg tool discovery, one for message rendering), twelve tests for
+the failure-diagnosis rules and the log block they feed, and eight HTTP-level
+tests for the web UI.
 
 No test requires real CSS/AACS/BD+ keys or retail media, and none reads a
 committed media file: synthetic inputs are built in-process and the MKV used by
@@ -630,7 +638,9 @@ Robot record grammar and quoting, message rendering, CLI behaviour and exit
 codes, settings persistence, registration, naming, selection rules, profile
 loading, DVD IFO parsing, Blu-ray MPLS parsing, ISO9660, UDF, caption
 decoding, libdvdcss/libaacs/libbdplus wrappers with fake libraries and fake
-devices, encrypted-clip staging and cancellation cleanup, backup, the
+devices, encrypted-clip staging and cancellation cleanup, backup, failure
+diagnosis (Windows and errno codes, AACS/FFmpeg/structure errors and the
+unknown-error fallback), the
 `guiserver` protocol, the web API (health, state, open failure, validation,
 cross-origin refusal and drive scans), and synthetic end-to-end rips when
 FFmpeg is present.
@@ -646,12 +656,21 @@ runs when someone runs it.
 rows, GUI tree and protection label, CSS decryption through libdvdcss, and
 the refusal path when no library is configured.
 
+**Observed once on a retail AACS Blu-ray:** a 38 GB dual-layer title
+(`LOTR_THE_TWO_TOWERS_PT1`) was opened from a USB `HL-DT-ST BD-RE BU40N` with
+libaacs and a `keydb.cfg` entry, and its single 38.25 GiB clip was staged for
+decryption to 83 % at 2×–5× disc speed (4.5–22 MiB/s, 2 % engine CPU). The
+same clip took MakeMKV 50.8 minutes on the same drive (12.86 MiB/s), so the
+staging path is neither slower nor CPU-bound. The remux that follows staging
+was not observed, so this evidences decryption and staging only.
+
 **Covered by synthetic/unit tests:** unencrypted DVD rip end to end (when
 FFmpeg is installed), captioned DVD with a real SubRip track in the output
 MKV, AACS/BD+ staging with fake libraries, UHD refusal (message 9143),
 ISO9660/UDF fixtures, the full GUI save protocol, and the web API.
 
-**Not verified:** retail AACS and BD+ discs, real libaacs/libbdplus builds,
+**Not verified:** a protected retail rip carried through to a checked
+output, retail BD+ discs, real libaacs/libbdplus builds,
 macOS, BD drive enumeration on non-Windows hosts, automated GUI interaction,
 a Docker image build, and UHD (unsupported by design). The verification
 claims above describe captured evidence; they were not re-run in this
@@ -710,6 +729,9 @@ environment.
 | `disc:0` shows nothing on Linux/macOS | Drive enumeration is Windows-only | Use `dev:/dev/sr0` or `file:`/`iso:` |
 | Save fails at the mux step on Blu-ray | ffmpeg rejected the packet stream | Check the log; the remux falls back through an MP4 intermediate only when no subtitles are selected |
 | GUI/web Cancel does nothing while opening | Opening is synchronous | Wait for the scan to finish; Cancel works for saves/backups |
+| The log says `Saving failed: the drive stopped responding` | The drive dropped off the USB bus or went to sleep mid-read | Re-seat the USB cable at both ends, keep the drive on mains power if it has an adapter, then reopen the disc |
+| A log block ends with `what to try:` | OpticRip matched the error to a known cause and printed its suggestion | Follow that line; every failure also lists the alternatives it considered |
+| No cause is printed for a failure | The exception matched no rule, so it is reported as an unexpected internal error rather than a guess | Turn on debug logging (Preferences) and the full traceback goes to `OpticRip_log.txt` |
 | Web UI says `offline` | Server stopped, wrong port, or blocked | Start `python -m opticrip.web`, check the port, and reload |
 | `disc:0` is empty in Docker | Drive enumeration is Windows-only | Use `dev:/dev/sr0` with `--device` and the device group |
 | Web save fails because FFmpeg is missing | Running the bare server without FFmpeg, or a custom image | Install FFmpeg or build the provided Dockerfile |
