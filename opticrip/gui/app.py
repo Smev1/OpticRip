@@ -8,11 +8,12 @@ process; this module never touches a disc itself.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 from .. import PRODUCT, PRODUCT_TAG, __version__, messages
 from .. import drives as drivelib
@@ -30,8 +31,11 @@ VIDEO_FILTER = (
     "VIDEO_TS.IFO;DISCID.DAT;HVA00001.VTI;MKBROM.AACS;index.bdmv;INDEX.BDM;"
     "MovieObject.bdmv;MOVIEOBJ.BDM;info.bdav;BDMV;BDAV;MKB_RO.inf;discatt.dat;*.iso;*.mkv"
 )
-TREE_TYPE_WIDTH = 250
-TREE_DESC_WIDTH = 520
+TREE_COLUMNS = ("name", "duration", "size", "source", "output")
+TREE_WIDTHS = {
+    "#0": 210, "name": 230, "duration": 82, "size": 92,
+    "source": 190, "output": 150,
+}
 STREAM_GROUPS = (("video", "Video"), ("audio", "Audio"),
                  ("subtitle", "Subtitles"))
 
@@ -57,7 +61,7 @@ class MainWindow:
         self._phase_started = 0.0
 
         root.title(PRODUCT_TAG)
-        root.minsize(760, 560)
+        root.minsize(920, 620)
         self._build()
         self._restore_geometry()
         for key, ident in (("app_DvdcssPath", 9121), ("app_AacsPath", 9131),
@@ -155,82 +159,87 @@ class MainWindow:
             button.pack(side="left", padx=(0, 4))
 
     def _build_source(self) -> None:
-        frame = ttk.LabelFrame(self.root, text="Source", padding=6)
+        frame = ttk.LabelFrame(self.root, text="Source", padding=(8, 6))
         frame.grid(row=1, column=0, sticky="we", padx=6, pady=(2, 0))
-        # A narrower combo plus one horizontal metadata row keeps the Source
-        # group from being stretched by three stacked width=22 labels.
-        self.source_combo = ttk.Combobox(frame, state="readonly", width=36)
-        self.source_combo.grid(row=0, column=0, sticky="w")
+        self.source_combo = ttk.Combobox(frame, state="readonly", width=52)
+        self.source_combo.grid(row=0, column=0, sticky="ew")
         self.source_combo.bind("<<ComboboxSelected>>", self._combo_selected)
+        ttk.Button(frame, text="Open files...", command=self.open_files).grid(
+            row=0, column=1, padx=(6, 0),
+        )
         info = ttk.Frame(frame)
-        info.grid(row=1, column=0, sticky="w", pady=(5, 0))
-        self.type_var = tk.StringVar(value="Type :")
-        self.label_var = tk.StringVar(value="Label :")
-        self.protection_var = tk.StringVar(value="Protection :")
+        info.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self.type_var = tk.StringVar(value="Type: —")
+        self.label_var = tk.StringVar(value="Label: —")
+        self.protection_var = tk.StringVar(value="Protection: —")
+        self.capacity_var = tk.StringVar(value="Capacity: —")
         for column, variable in enumerate((self.type_var, self.label_var,
-                                           self.protection_var)):
+                                           self.protection_var,
+                                           self.capacity_var)):
             ttk.Label(info, textvariable=variable).grid(
                 row=0, column=column, sticky="w", padx=(0, 18),
             )
         frame.columnconfigure(0, weight=1)
 
-        self.info_text = tk.Text(self.root, height=7, wrap="word", state="disabled",
-                                 relief="sunken", borderwidth=1)
-        self.info_text.grid(row=2, column=0, sticky="we", padx=6, pady=(4, 0))
-
     def _build_body(self) -> None:
+        output = ttk.Frame(self.root, padding=(8, 2))
+        output.grid(row=2, column=0, sticky="we", padx=6, pady=(2, 0))
+        ttk.Label(output, text="Output folder:").pack(side="left")
+        self.output_var = tk.StringVar(value=self.output_dir)
+        self.output_entry = ttk.Entry(output, textvariable=self.output_var,
+                                      state="readonly")
+        self.output_entry.pack(side="left", fill="x", expand=True, padx=6)
+        ttk.Button(output, text="Change...", command=self.set_output_folder).pack(
+            side="right",
+        )
+
         self.paned = ttk.PanedWindow(self.root, orient="vertical")
         self.paned.grid(row=3, column=0, sticky="nsew", padx=6, pady=4)
-        upper = ttk.PanedWindow(self.paned, orient="horizontal")
-        self.paned.add(upper, weight=3)
 
-        tree_frame = ttk.Frame(upper)
-        # The hierarchy lives in #0 so Treeview draws its expanders and
-        # indentation; show="headings" hid both and made every row look flat.
-        self.tree = ttk.Treeview(tree_frame, columns=("desc",),
+        tree_frame = ttk.Frame(self.paned)
+        # Keep the hierarchy in #0 so ttk draws the disclosure arrows and
+        # indentation; normal columns carry the disc/title details.
+        self.tree = ttk.Treeview(tree_frame, columns=TREE_COLUMNS,
                                  show="tree headings", selectmode="browse")
-        self.tree.heading("#0", text="Type")
-        self.tree.heading("desc", text="Description")
-        self.tree.column("#0", width=TREE_TYPE_WIDTH, anchor="w")
-        self.tree.column("desc", width=TREE_DESC_WIDTH, anchor="w")
+        self.tree.heading("#0", text="Title")
+        self.tree.column("#0", width=TREE_WIDTHS["#0"], anchor="w", stretch=True)
+        for column, title in (
+            ("name", "Name"), ("duration", "Duration"), ("size", "Size"),
+            ("source", "Source"), ("output", "Output"),
+        ):
+            self.tree.heading(column, text=title)
+            self.tree.column(column, width=TREE_WIDTHS[column], anchor="w",
+                             stretch=column == "name")
         scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scroll.set)
-        self.tree.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
+        hscroll = ttk.Scrollbar(tree_frame, orient="horizontal",
+                                command=self.tree.xview)
+        self.tree.configure(yscrollcommand=scroll.set, xscrollcommand=hscroll.set)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        scroll.grid(row=0, column=1, sticky="ns")
+        hscroll.grid(row=1, column=0, sticky="ew")
+        tree_frame.rowconfigure(0, weight=1)
+        tree_frame.columnconfigure(0, weight=1)
         self.tree.bind("<Button-1>", self._tree_click)
         self.tree.bind("<Button-3>", self._tree_menu)
         self.tree.bind("<Double-1>", self._tree_double)
-        upper.add(tree_frame, weight=3)
-
-        side = ttk.Notebook(upper)
-        output_tab = ttk.Frame(side, padding=8)
-        side.add(output_tab, text="Output folder")
-        ttk.Label(output_tab, text="Output folder").pack(anchor="w")
-        self.output_var = tk.StringVar(value=self.output_dir)
-        ttk.Label(output_tab, textvariable=self.output_var, wraplength=240,
-                  foreground="#333").pack(anchor="w", pady=(2, 8))
-        ttk.Button(output_tab, text="Set output folder",
-                   command=self.set_output_folder).pack(anchor="w")
-        info_tab = ttk.Frame(side, padding=8)
-        side.add(info_tab, text="Info")
-        self.side_info = tk.Text(info_tab, width=34, wrap="word", state="disabled",
-                                 relief="flat", borderwidth=0)
-        self.side_info.pack(fill="both", expand=True)
-        upper.add(side, weight=1)
-        self.upper_paned = upper
+        self.paned.add(tree_frame, weight=4)
 
         log_frame = ttk.Frame(self.paned)
-        ttk.Label(log_frame, text="Log").pack(anchor="w")
+        log_header = ttk.Frame(log_frame)
+        log_header.pack(fill="x")
+        ttk.Label(log_header, text="Log").pack(side="left")
+        ttk.Button(log_header, text="Clear", width=7,
+                   command=self.clear_log).pack(side="right")
         self.log = tk.Text(log_frame, height=8, wrap="word", state="disabled",
                            relief="sunken", borderwidth=1)
         log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log.yview)
         self.log.configure(yscrollcommand=log_scroll.set)
         self.log.pack(side="left", fill="both", expand=True)
         log_scroll.pack(side="right", fill="y")
-        self.paned.add(log_frame, weight=2)
+        self.paned.add(log_frame, weight=1)
 
         self.big_button = tk.Button(
-            self.root, text="No disc inserted", font=("Segoe UI", 12),
+            self.root, text="No disc inserted", font=("Segoe UI", 11),
             relief="groove", command=self.open_files,
         )
         self.big_button.grid(row=4, column=0, sticky="we", padx=6, pady=(0, 2))
@@ -242,6 +251,18 @@ class MainWindow:
         self.tree_menu.add_command(label="Toggle item", command=lambda: self._toggle_selected())
         self.tree_menu.add_command(label="Select all", command=lambda: self._select_all(True))
         self.tree_menu.add_command(label="Unselect all", command=lambda: self._select_all(False))
+
+        style = ttk.Style(self.root)
+        base_font = tkfont.nametofont("TkDefaultFont")
+        bold = base_font.copy()
+        bold.configure(weight="bold")
+        self._tree_bold = bold
+        style.configure("Treeview", rowheight=max(22, base_font.metrics("linespace") + 6))
+        style.configure("Treeview.Heading", font=bold)
+        self.tree.tag_configure("disc", font=bold)
+        self.tree.tag_configure("title", font=bold, background="#eef3f7")
+        self.tree.tag_configure("group", foreground="#4d5863")
+        self.tree.tag_configure("chapter", foreground="#6c7680")
 
     def _build_status(self) -> None:
         frame = ttk.Frame(self.root, padding=(6, 2))
@@ -521,25 +542,25 @@ class MainWindow:
     def _render_disc(self) -> None:
         assert self.disc is not None
         disc = self.disc
-        self.type_var.set(f"Type : {disc['kind']}")
-        self.label_var.set(f"Label : {disc['label']}")
-        self.protection_var.set(f"Protection : {disc['protection']}")
         self.tree.delete(*self.tree.get_children())
         self.title_items.clear()
         self.stream_items.clear()
         self.group_items.clear()
         media = self.tree.insert(
             "", "end", text=f"{disc['kind']} disc",
-            values=(f"{disc['label']} · {disc['title_count']} title(s)",), open=True,
+            values=(disc["label"], "", disc.get("size_text", ""),
+                    disc["kind"], f"{disc['title_count']} title(s)"),
+            open=True, tags=("disc",),
         )
         for title in disc["titles"]:
             glyph = "☑" if title["selected"] else "☐"
-            detail = title.get("tree_text") or title["size_text"]
-            description = (f"{title['duration_text']} · {detail}" if detail
-                           else title["duration_text"])
+            name = title.get("name") or title.get("comment") or "—"
+            output = title.get("output_name") or "Auto"
             iid = self.tree.insert(
                 media, "end", text=f"{glyph} Title {int(title['index']) + 1}",
-                values=(description,), open=True,
+                values=(name, title["duration_text"], title["size_text"],
+                        disc["kind"], output),
+                open=True, tags=("title",),
             )
             self.title_items[iid] = int(title["index"])
             for kind, label in STREAM_GROUPS:
@@ -547,8 +568,9 @@ class MainWindow:
                 if not streams:
                     continue
                 group = self.tree.insert(
-                    iid, "end", text=f"{label} ({len(streams)})", values=("",),
-                    open=True,
+                    iid, "end", text=label,
+                    values=(f"{len(streams)} track(s)", "", "", "", ""),
+                    open=True, tags=("group",),
                 )
                 self.group_items.append(group)
                 for stream in streams:
@@ -556,16 +578,19 @@ class MainWindow:
                     sid = self.tree.insert(
                         group, "end",
                         text=f"{sglyph} {self._stream_name(stream)}",
-                        values=(self._stream_detail(stream),),
+                        values=(self._stream_detail(stream), "", "",
+                                self._stream_source(stream),
+                                self._stream_output(stream)),
+                        tags=("stream",),
                     )
                     self.stream_items[sid] = (int(title["index"]), int(stream["index"]))
             if title["chapters"]:
                 self.tree.insert(
                     iid, "end", text="Chapters",
-                    values=(f"{title['chapters']} chapter(s)",),
+                    values=(f"{title['chapters']} chapter(s)", "", "", "", ""),
+                    tags=("chapter",),
                 )
         self._update_info_panel()
-        self._update_side_info()
 
     @staticmethod
     def _stream_name(stream: dict) -> str:
@@ -598,52 +623,29 @@ class MainWindow:
                 bits.append("forced")
         return " · ".join(bits)
 
-    def _update_info_panel(self) -> None:
-        lines: list[str] = ["Drive Information"]
-        drive = self.drives.get(0) or {}
-        if drive.get("present"):
-            lines.append(f"OS device name: {drive.get('device', '')}")
-            lines.append(f"Manufacturer: {drive.get('name', '')}")
-        lines.append("")
-        lines.append("Disc Information")
-        if self.disc:
-            lines.append(f"Label: {self.disc['label']}")
-            if self.disc.get("protection") and self.disc["protection"] != "None":
-                lines.append(f"Protection: {self.disc['protection']}")
-            if self.disc.get("size_text"):
-                lines.append(f"Data capacity: {self.disc['size_text']}")
-            lines.append(f"Disc type: {self.disc['kind']}")
-            lines.append(f"Titles: {self.disc['title_count']}")
-        elif self.state == "opening":
-            lines.append("Disc is being loaded")
-        else:
-            lines.append("No disc inserted")
-        self._set_text(self.info_text, "\n".join(lines))
-
-    def _update_side_info(self) -> None:
-        if not self.disc:
-            self._set_text(self.side_info, "")
-            return
-        lines = [
-            f"Source information",
-            f"Label: {self.disc['label']}",
-            f"Type: {self.disc['kind']}",
-            f"Protection: {self.disc['protection']}",
-            f"Titles: {self.disc['title_count']}",
-            "",
-        ]
-        for title in self.disc["titles"]:
-            lines.append(f"Title {title['index']}: {title['duration_text']} , {title['size_text']}")
-            for stream in title["streams"]:
-                lines.append(f"  {stream['kind_label']}: {stream['display']}")
-        self._set_text(self.side_info, "\n".join(lines))
+    @staticmethod
+    def _stream_source(stream: dict) -> str:
+        if stream.get("kind") == "subtitle":
+            return "Forced" if stream.get("forced") else ""
+        return (stream.get("codec_long") or stream.get("codec_id")
+                or stream.get("codec") or "")
 
     @staticmethod
-    def _set_text(widget: tk.Text, text: str) -> None:
-        widget.configure(state="normal")
-        widget.delete("1.0", "end")
-        widget.insert("1.0", text)
-        widget.configure(state="disabled")
+    def _stream_output(stream: dict) -> str:
+        return stream.get("output_codec") or "Auto"
+
+    def _update_info_panel(self) -> None:
+        disc = self.disc
+        if disc:
+            self.type_var.set(f"Type: {disc['kind']}")
+            self.label_var.set(f"Label: {disc['label'] or '—'}")
+            self.protection_var.set(f"Protection: {disc['protection'] or 'None'}")
+            self.capacity_var.set(f"Capacity: {disc.get('size_text') or '—'}")
+        else:
+            self.type_var.set("Type: —")
+            self.label_var.set("Label: —")
+            self.protection_var.set("Protection: —")
+            self.capacity_var.set("Capacity: —")
 
     def log_line(self, text: str) -> None:
         stamp = datetime.now().strftime("%H:%M:%S")
@@ -921,10 +923,6 @@ class MainWindow:
         self.title_items.clear()
         self.stream_items.clear()
         self.group_items.clear()
-        self.type_var.set("Type :")
-        self.label_var.set("Label :")
-        self.protection_var.set("Protection :")
-        self._set_text(self.side_info, "")
         self._update_info_panel()
         self._set_state("no_source")
         self._reset_progress()
@@ -1053,33 +1051,65 @@ class MainWindow:
     # ------------------------------------------------------------------
     def _restore_geometry(self) -> None:
         geometry, state = self.settings.load_window_state()
-        if geometry:
-            try:
-                self.root.geometry(geometry)
-            except tk.TclError:
-                self.root.geometry("860x640")
-        else:
-            self.root.geometry("860x640")
+        width, height, x, y = self._fit_to_screen(geometry)
+        try:
+            self.root.geometry(f"{width}x{height}+{x}+{y}")
+        except tk.TclError:
+            self.root.geometry("1060x720")
+        layout: dict = {}
         if state:
             try:
                 layout = json.loads(state)
-                self.root.after(120, lambda: self._apply_layout(layout))
             except ValueError:
-                pass
+                layout = {}
+        self.root.after(150, lambda: self._apply_layout(layout))
+
+    def _fit_to_screen(self, geometry: str) -> tuple[int, int, int, int]:
+        """Clamp a remembered geometry to the display we are actually on.
+
+        The reference restores the last window rectangle blindly; doing that
+        with a rectangle saved on a larger or mirrored display leaves the menu
+        bar and the left toolbar outside the screen.  Everything is trimmed to
+        the visible area and re-centred when the saved position is unusable.
+        """
+        screen_w = max(self.root.winfo_screenwidth(), 640)
+        screen_h = max(self.root.winfo_screenheight(), 480)
+        min_w, min_h = 920, 620
+        max_w = max(min_w, screen_w - 40)
+        max_h = max(min_h, screen_h - 150)
+        width, height = 1180, 780
+        x = y = None
+        match = re.match(r"(\d+)x(\d+)([+-])(-?\d+)([+-])(-?\d+)", geometry or "")
+        if match:
+            width, height = int(match.group(1)), int(match.group(2))
+            x = int(match.group(4)) * (-1 if match.group(3) == "-" else 1)
+            y = int(match.group(6)) * (-1 if match.group(5) == "-" else 1)
+        width = min(max(width, min_w), max_w)
+        height = min(max(height, min_h), max_h)
+        if x is None or y is None:
+            x = (screen_w - width) // 2
+            y = max(0, (screen_h - height) // 2 - 20)
+        x = min(max(x, 0), max(0, screen_w - width))
+        y = min(max(y, 0), max(0, screen_h - height - 90))
+        return width, height, x, y
 
     def _apply_layout(self, layout: dict) -> None:
+        """Give the title tree about two thirds and keep the log usable."""
         try:
-            if "vertical" in layout:
-                self.paned.sashpos(0, int(layout["vertical"]))
-            if "horizontal" in layout:
-                self.upper_paned.sashpos(0, int(layout["horizontal"]))
-        except tk.TclError:
+            self.root.update_idletasks()
+            total = self.paned.winfo_height()
+            if total < 240:
+                total = max(self.root.winfo_height() - 260, 360)
+            top_min = min(220, int(total * 0.5))
+            log_min = min(150, int(total * 0.35))
+            position = int(layout.get("vertical", total * 0.62))
+            self.paned.sashpos(0, max(min(position, total - log_min), top_min))
+        except (tk.TclError, ValueError, TypeError):
             pass
 
     def _on_close(self) -> None:
         try:
-            layout = {"vertical": self.paned.sashpos(0),
-                      "horizontal": self.upper_paned.sashpos(0)}
+            layout = {"vertical": self.paned.sashpos(0)}
             self.settings.save_window_state(self.root.geometry(), json.dumps(layout))
             self.settings.save()
         except (tk.TclError, OSError):
