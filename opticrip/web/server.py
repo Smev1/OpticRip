@@ -99,6 +99,16 @@ class WebState:
                     self.drives[index] = dict(event)
                 else:
                     self.drives.pop(index, None)
+            elif kind == "failure":
+                text = " / ".join(part for part in (
+                    str(event.get("headline") or ""),
+                    str(event.get("advice") or "")) if part)
+                self.log.append({
+                    "seq": self.seq, "time": time.time(), "id": 0,
+                    "text": text, "flags": 0,
+                })
+                self.seq += 1
+                self.error = str(event.get("headline") or "")
             elif kind == "error":
                 self.error = str(event.get("message", ""))
 

@@ -13,11 +13,12 @@ import os
 import sys
 import tempfile
 import threading
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
 
-from . import BANNER, PRODUCT, __version__, messages, registration
+from . import BANNER, PRODUCT, __version__, diagnose, messages, registration
 from . import cc as cclib
 from .aacs import mkb_generation, parse_mkb
 from . import dvdcss as dvdcsslib
@@ -116,6 +117,30 @@ class Engine:
                 "text": messages.render(ident, *params),
                 "flags": messages.flags(ident),
             })
+
+    def report_failure(self, exc: BaseException, stage: str, detail: str = "",
+                       ident: int = 0) -> diagnose.Diagnosis:
+        """Report a failure as cause plus advice, not just an exception string.
+
+        With ``ident`` the numeric catalogue keeps its one-line entry (the
+        reference-style log), while the ``failure`` event carries the detail
+        the GUI log pane shows underneath it.
+        """
+        diagnosis = diagnose.explain(exc, stage=stage, detail=detail)
+        if ident:
+            self.message(ident, diagnosis.summary())
+        if self.event_sink is not None:
+            event = {
+                "event": "failure", "stage": stage,
+                "headline": diagnosis.headline, "problem": diagnosis.problem,
+                "causes": list(diagnosis.causes), "advice": diagnosis.advice,
+            }
+            if self.settings.get_bool("app_ShowDebug"):
+                trace = traceback.format_exc()
+                if not trace.startswith("NoneType: None"):
+                    event["traceback"] = trace
+            self.event_sink(event)
+        return diagnosis
 
     def emit_progress(self, current: int, total: int, **fields) -> None:
         if self.on_progress is not None:
@@ -446,6 +471,7 @@ class Engine:
                 self.message(9024)
             self.message(5010)
             self.writer.tcount(0)
+            self.report_failure(exc, "opening the disc", spec)
             if css_active:
                 fs.close()
                 fs = None
@@ -865,7 +891,8 @@ class Engine:
             self.message(9010)
             raise
         except (OSError, DvdcssError, BlurayDecryptError) as exc:
-            self.message(9006, str(exc))
+            self.report_failure(exc, "saving",
+                                f"title #{title.index}, reading the disc", ident=9006)
             return None
         if not inputs:
             self.message(9006, "no source segments")
@@ -931,7 +958,8 @@ class Engine:
                 output.unlink(missing_ok=True)
             raise
         except FFmpegError as exc:
-            self.message(9006, str(exc))
+            self.report_failure(exc, "saving",
+                                f"title #{title.index}, encoding the file", ident=9006)
             if output is not None and output.exists() and output.stat().st_size == 0:
                 output.unlink(missing_ok=True)
             return None
@@ -1037,7 +1065,7 @@ class Engine:
             self.message(9010)
             return False, 11
         except (BackupError, BlurayDecryptError, DvdcssError, OSError) as exc:
-            self.message(9009, str(exc))
+            self.report_failure(exc, "backing up", f"source {self.spec}", ident=9009)
             return False, 11
         self.message(9008, copied)
         return True, 0
@@ -1150,7 +1178,7 @@ class Engine:
                             sink({"event": "saved", "ok": False, "path": "",
                                   "cancelled": True})
                         except Exception as exc:  # keep the engine alive
-                            sink({"event": "error", "message": str(exc)})
+                            self.report_failure(exc, "saving")
                             sink({"event": "saved", "ok": False, "path": ""})
 
                     run_job(save_one)
@@ -1169,7 +1197,7 @@ class Engine:
                             sink({"event": "saved", "ok": False, "count": 0,
                                   "code": 11, "cancelled": True})
                         except Exception as exc:  # keep the engine alive
-                            sink({"event": "error", "message": str(exc)})
+                            self.report_failure(exc, "saving")
                             sink({"event": "saved", "ok": False, "count": 0, "code": 11})
 
                     run_job(save_all)
@@ -1186,7 +1214,7 @@ class Engine:
                         except KeyboardInterrupt:
                             sink({"event": "backup_done", "ok": False, "code": 11})
                         except Exception as exc:  # keep the engine alive
-                            sink({"event": "error", "message": str(exc)})
+                            self.report_failure(exc, "backing up")
                             sink({"event": "backup_done", "ok": False, "code": 11})
 
                     run_job(backup)
@@ -1212,7 +1240,7 @@ class Engine:
                         worker.join(timeout=2)
                     return 0
             except Exception as exc:  # keep the engine alive for the UI
-                sink({"event": "error", "message": str(exc)})
+                self.report_failure(exc, "handling a command")
         return 0
 
 

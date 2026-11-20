@@ -54,6 +54,17 @@ class WebTests(unittest.TestCase):
         status, data, response_headers = self.request(method, path, body, headers)
         return status, json.loads(data), response_headers
 
+    def test_failure_events_reach_the_log_and_state(self):
+        self.state._on_event({
+            "event": "failure", "stage": "saving",
+            "headline": "the drive stopped responding",
+            "causes": ["the cable"], "advice": "re-seat it",
+        })
+        snapshot = self.state.snapshot()
+        self.assertEqual(snapshot["error"], "the drive stopped responding")
+        self.assertIn("the drive stopped responding / re-seat it",
+                      snapshot["log"][-1]["text"])
+
     def wait_idle(self, timeout=5.0):
         deadline = time.time() + timeout
         while time.time() < deadline:

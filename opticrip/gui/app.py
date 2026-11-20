@@ -58,6 +58,7 @@ class MainWindow:
         self._busy_text = ""
         self._progress_title: dict | None = None
         self._progress_fraction = 0.0
+        self._last_failure: dict | None = None
         self._phase_started = 0.0
 
         root.title(PRODUCT_TAG)
@@ -337,6 +338,7 @@ class MainWindow:
             self.status_var.set("Ready")
 
     def _busy(self, operation: str, action: str) -> None:
+        self._last_failure = None
         self._busy_text = f"{operation} / {action}"
         self.status_var.set(self._busy_text)
         self._reset_progress()
@@ -481,7 +483,7 @@ class MainWindow:
                 if not event.get("ok"):
                     self._reset_progress()
                     messagebox.showerror(PRODUCT_TAG,
-                                         "Saving failed. See the log for details.")
+                                         self._failure_text("Saving failed."))
             self._set_state("ready")
         elif kind == "backup_done":
             self.elapsed_var.set("")
@@ -489,13 +491,15 @@ class MainWindow:
             if event.get("ok"):
                 messagebox.showinfo(PRODUCT_TAG, "Backup complete.")
             else:
-                messagebox.showerror(PRODUCT_TAG, "Backup failed. See the log for details.")
+                messagebox.showerror(PRODUCT_TAG, self._failure_text("Backup failed."))
             self._set_state("ready")
         elif kind == "registered":
             if not event.get("ok"):
                 messagebox.showerror(PRODUCT_TAG, "Key not found or invalid")
+        elif kind == "failure":
+            self._report_failure(event)
         elif kind == "error":
-            self.log_line(f"Engine error: {event.get('message')}")
+            self.log_line(f"Engine error: {event.get('message') or 'the engine gave no detail'}")
         elif kind == "stderr":
             self._debug(event.get("message", ""))
         elif kind == "engine_exit":
@@ -655,6 +659,46 @@ class MainWindow:
         self.log.configure(state="disabled")
         if self.settings.get_bool("app_ShowDebug"):
             self._debug(text)
+
+    @staticmethod
+    def _failure_lines(event: dict) -> list[str]:
+        """Format a failure event for the log pane, cause first."""
+        stage = str(event.get("stage") or "operation")
+        headline = str(event.get("headline") or "the cause is unknown")
+        lines = [f"!! {stage.capitalize()} failed: {headline}"]
+        problem = str(event.get("problem") or "")
+        if problem:
+            lines.append(f"   what happened: {problem}")
+        for position, cause in enumerate(event.get("causes") or []):
+            label = "most likely" if position == 0 else "also possible"
+            lines.append(f"   {label}: {cause}")
+        advice = str(event.get("advice") or "")
+        if advice:
+            lines.append(f"   what to try: {advice}")
+        return lines
+
+    def _report_failure(self, event: dict) -> None:
+        """Log a failure with its probable cause and the next step to try."""
+        self._last_failure = {
+            "headline": str(event.get("headline") or "the cause is unknown"),
+            "advice": str(event.get("advice") or ""),
+        }
+        for line in self._failure_lines(event):
+            self.log_line(line)
+        trace = event.get("traceback")
+        if trace:
+            self._debug(str(trace))
+            self.log_line("   full traceback written to OpticRip_log.txt")
+
+    def _failure_text(self, opening: str) -> str:
+        """Dialog text: the failed operation, its likely cause and the fix."""
+        failure, self._last_failure = self._last_failure, None
+        if not failure:
+            return f"{opening}\n\nThe log pane below has the details."
+        text = f"{opening}\n\nLikely cause: {failure['headline']}."
+        if failure["advice"]:
+            text += f"\n\n{failure['advice']}"
+        return text + "\n\nThe log pane below has the full detail."
 
     def _debug(self, text: str) -> None:
         from ..settings import DebugLog
